@@ -26506,7 +26506,7 @@
                 try {
                     const result = yield runInContext(chunk, // Code
                     this.context, this.options);
-                    this.conductor.sendOutput(`Result: ${result}`);
+                    this.conductor.sendOutput(`Result: ${result.representation}`);
                 }
                 catch (error) {
                     this.conductor.sendOutput(`Error: ${error instanceof Error ? error.message : error}`);
