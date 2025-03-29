@@ -3,13 +3,13 @@
   "packageManager": "yarn@1.22.22",
   "version": "1.0.0",
   "description": "",
-  "main": "build/index.js",
-  "types": "build/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "regen": "npm run build && node build/generate.js",
+    "regen": "npm run build && node dist/generate.js",
     "start:dev": "npx nodemon",
     "build": "rollup -c",
-    "start": "npm run build && node build/index.js",
+    "start": "npm run build && node dist/index.js",
     "jsdoc": "./scripts/jsdoc.sh",
     "test": "jest"
   },
