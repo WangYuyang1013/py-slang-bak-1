@@ -26507,7 +26507,7 @@
                     const result = yield runInContext(chunk, // Code
                     this.context, this.options);
                     //this.conductor.sendOutput(`Result: ${result.representation.toString(result.value)}`);
-                    this.conductor.sendOutput(`Result: ${JSON.stringify(result, null, 2)}`);
+                    this.conductor.sendOutput(`Result: ${JSON.stringify(result, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)}`);
                 }
                 catch (error) {
                     this.conductor.sendOutput(`Error: ${error instanceof Error ? error.message : error}`);
