@@ -8,7 +8,7 @@
   "scripts": {
     "regen": "npm run build && node build/generate.js",
     "start:dev": "npx nodemon",
-    "build": "rimraf ./build && tsc",
+    "build": "rollup -c",
     "start": "npm run build && node build/index.js",
     "jsdoc": "./scripts/jsdoc.sh",
     "test": "jest"
