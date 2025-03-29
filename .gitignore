@@ -109,6 +109,5 @@ dist
 # TypeScript build files
 build/
 
-node_modules/
-dist/
+
 .DS_Store
