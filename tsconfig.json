@@ -4,7 +4,8 @@
     "jest.config.js",
     "node_modules",
     "dist",
-    "src/tests"
+    "src/tests",
+    "rollup.config.js"
   ],
   "compilerOptions": {
     /* Visit https://aka.ms/tsconfig to read more about this file */
