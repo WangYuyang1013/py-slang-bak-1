@@ -5,6 +5,6 @@ import { RecursivePartial, Result } from "../types"
 import * as es from 'estree'
 
 export function runCSEMachine(program: es.Program, context: Context, options: RecursivePartial<IOptions> = {}): Promise<Result> {
-    const value = evaluate(program, context, options)
-    return CSEResultPromise(context, value)
+    const value = evaluate(program, context, options);
+    return CSEResultPromise(context, value);
 }
