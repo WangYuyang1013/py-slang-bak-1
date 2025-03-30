@@ -238,5 +238,5 @@ export async function runInContext(
 //     })();
 // }
 
-//const {runnerPlugin, conduit} = initialise(PyEvaluator);
+const {runnerPlugin, conduit} = initialise(PyEvaluator);
 
