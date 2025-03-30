@@ -28,6 +28,7 @@
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^12.1.2",
+    "@types/fast-levenshtein": "^0.0.4",
     "@types/jest": "^29.4.0",
     "@types/mathjs": "^9.4.1",
     "@types/node": "^18.19.84",

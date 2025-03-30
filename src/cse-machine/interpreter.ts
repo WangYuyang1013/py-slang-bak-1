@@ -208,8 +208,8 @@ export function* generateCSEMachineStateStream(
 
   while (command) {
     // For local debug only
-    console.info('next command to be evaluated');
-    console.info(command);
+    // console.info('next command to be evaluated');
+    // console.info(command);
 
     // Return to capture a snapshot of the control and stash after the target step count is reached
     if (!isPrelude && steps === envSteps) {
