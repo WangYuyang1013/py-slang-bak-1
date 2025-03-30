@@ -61,7 +61,7 @@ export declare function min(args: Value[]): Value;
 export declare function random_random(args: Value[]): Value;
 export declare function round(args: Value[]): Value;
 export declare function time_time(args: Value[]): Value;
-export declare function toPythonString(obj: Value[]): string;
+export declare function toPythonString(obj: Value): string;
 export declare function str(args: Value[]): Value;
 export declare function input(args: Value[]): Value;
 export declare function print(args: Value[]): Value;

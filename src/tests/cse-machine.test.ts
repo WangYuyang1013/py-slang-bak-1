@@ -130,7 +130,7 @@ def f(x, y, z):
 f(5000, 5000, 2)
 `;
     const result = runCSEMachine(code);
-    expect((result as Value).value).toBe(15000);
+    expect(toPythonString(result as Value)).toBe('15000');
 });
   
 // test('const uses block scoping instead of function scoping', () => {

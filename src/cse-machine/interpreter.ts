@@ -98,7 +98,6 @@ export function evaluate(program: es.Program, context: Context, options: Recursi
 
 function evaluateImports(program: es.Program, context: Context) {
   try {
-    console.info('evaluete imports');
     const [importNodeMap] = filterImportDeclarations(program)
     const environment = currentEnvironment(context)
     for (const [moduleName, nodes] of importNodeMap) {

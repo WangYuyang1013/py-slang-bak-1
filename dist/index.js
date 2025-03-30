@@ -25201,7 +25201,6 @@
     }
     function evaluateImports(program, context) {
         try {
-            console.info('evaluete imports');
             const [importNodeMap] = filterImportDeclarations(program);
             const environment = currentEnvironment(context);
             for (const [moduleName, nodes] of importNodeMap) {

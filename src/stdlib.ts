@@ -1712,7 +1712,7 @@ function toPythonFloat(num: number): string {
     return num.toString();
 }
 
-export function toPythonString(obj: Value[]): string {
+export function toPythonString(obj: Value): string {
     let ret: any;
     if ((obj as Value).type === 'bigint' || (obj as Value).type === 'complex') {
         ret = (obj as Value).value.toString();
