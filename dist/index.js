@@ -13282,7 +13282,7 @@
      *                                not equal that of the old ones
      */
     function reshape(array, sizes) {
-      var flatArray = flatten(array);
+      var flatArray = flatten(array, true); // since it has rectangular
       var currentLength = flatArray.length;
       if (!Array.isArray(array) || !Array.isArray(sizes)) {
         throw new TypeError('Array expected');
@@ -13427,22 +13427,46 @@
      * Flatten a multi dimensional array, put all elements in a one dimensional
      * array
      * @param {Array} array   A multi dimensional array
+     * @param {boolean} isRectangular Optional. If the array is rectangular (not jagged)
      * @return {Array}        The flattened array (1 dimensional)
      */
     function flatten(array) {
+      var isRectangular = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
       if (!Array.isArray(array)) {
         // if not an array, return as is
         return array;
       }
+      if (typeof isRectangular !== 'boolean') {
+        throw new TypeError('Boolean expected for second argument of flatten');
+      }
       var flat = [];
-      array.forEach(function callback(value) {
-        if (Array.isArray(value)) {
-          value.forEach(callback); // traverse through sub-arrays recursively
-        } else {
-          flat.push(value);
-        }
-      });
+      if (isRectangular) {
+        _flattenRectangular(array);
+      } else {
+        _flatten(array);
+      }
       return flat;
+      function _flatten(array) {
+        for (var i = 0; i < array.length; i++) {
+          var item = array[i];
+          if (Array.isArray(item)) {
+            _flatten(item);
+          } else {
+            flat.push(item);
+          }
+        }
+      }
+      function _flattenRectangular(array) {
+        if (Array.isArray(array[0])) {
+          for (var i = 0; i < array.length; i++) {
+            _flattenRectangular(array[i]);
+          }
+        } else {
+          for (var _i = 0; _i < array.length; _i++) {
+            flat.push(array[_i]);
+          }
+        }
+      }
     }
 
     /**
@@ -13553,8 +13577,8 @@
           }
         }
       }
-      for (var _i = 0; _i < sizes.length; _i++) {
-        checkBroadcastingRules(sizes[_i], sizeMax);
+      for (var _i2 = 0; _i2 < sizes.length; _i2++) {
+        checkBroadcastingRules(sizes[_i2], sizeMax);
       }
       return sizeMax;
     }
@@ -13707,13 +13731,20 @@
      * @param {Function} callback The original callback function to simplify.
      * @param {Array|Matrix} array The array that will be used with the callback function.
      * @param {string} name The name of the function that is using the callback.
+     * @param {boolean} [isUnary=false] If true, the callback function is unary and will be optimized as such.
      * @returns {Function} Returns a simplified version of the callback function.
      */
     function optimizeCallback(callback, array, name) {
+      var isUnary = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : false;
       if (typedFunction.isTypedFunction(callback)) {
-        var firstIndex = (array.isMatrix ? array.size() : arraySize(array)).map(() => 0);
-        var firstValue = array.isMatrix ? array.get(firstIndex) : get(array, firstIndex);
-        var numberOfArguments = _findNumberOfArguments(callback, firstValue, firstIndex, array);
+        var numberOfArguments;
+        if (isUnary) {
+          numberOfArguments = 1;
+        } else {
+          var firstIndex = (array.isMatrix ? array.size() : arraySize(array)).map(() => 0);
+          var firstValue = array.isMatrix ? array.get(firstIndex) : get(array, firstIndex);
+          numberOfArguments = _findNumberOfArgumentsTyped(callback, firstValue, firstIndex, array);
+        }
         var fastCallback;
         if (array.isMatrix && array.dataType !== 'mixed' && array.dataType !== undefined) {
           var singleSignature = _findSingleSignatureWithArity(callback, numberOfArguments);
@@ -13722,21 +13753,37 @@
           fastCallback = callback;
         }
         if (numberOfArguments >= 1 && numberOfArguments <= 3) {
-          return function () {
-            for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
-              args[_key] = arguments[_key];
+          return {
+            isUnary: numberOfArguments === 1,
+            fn: function fn() {
+              for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
+                args[_key] = arguments[_key];
+              }
+              return _tryFunctionWithArgs(fastCallback, args.slice(0, numberOfArguments), name, callback.name);
             }
-            return _tryFunctionWithArgs(fastCallback, args.slice(0, numberOfArguments), name, callback.name);
           };
         }
-        return function () {
-          for (var _len2 = arguments.length, args = new Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
-            args[_key2] = arguments[_key2];
+        return {
+          isUnary: false,
+          fn: function fn() {
+            for (var _len2 = arguments.length, args = new Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+              args[_key2] = arguments[_key2];
+            }
+            return _tryFunctionWithArgs(fastCallback, args, name, callback.name);
           }
-          return _tryFunctionWithArgs(fastCallback, args, name, callback.name);
         };
       }
-      return callback;
+      if (isUnary === undefined) {
+        return {
+          isUnary: _findIfCallbackIsUnary(callback),
+          fn: callback
+        };
+      } else {
+        return {
+          isUnary,
+          fn: callback
+        };
+      }
     }
     function _findSingleSignatureWithArity(callback, arity) {
       var matchingFunctions = [];
@@ -13750,7 +13797,32 @@
         return matchingFunctions[0];
       }
     }
-    function _findNumberOfArguments(callback, value, index, array) {
+
+    /**
+     * Determines if a given callback function is unary (i.e., takes exactly one argument).
+     *
+     * This function checks the following conditions to determine if the callback is unary:
+     * 1. The callback function should have exactly one parameter.
+     * 2. The callback function should not use the `arguments` object.
+     * 3. The callback function should not use rest parameters (`...`).
+     * If in doubt, this function shall return `false` to be safe
+     *
+     * @param {Function} callback - The callback function to be checked.
+     * @returns {boolean} - Returns `true` if the callback is unary, otherwise `false`.
+     */
+    function _findIfCallbackIsUnary(callback) {
+      if (callback.length !== 1) return false;
+      var callbackStr = callback.toString();
+      // Check if the callback function uses `arguments`
+      if (/arguments/.test(callbackStr)) return false;
+
+      // Extract the parameters of the callback function
+      var paramsStr = callbackStr.match(/\(.*?\)/);
+      // Check if the callback function uses rest parameters
+      if (/\.\.\./.test(paramsStr)) return false;
+      return true;
+    }
+    function _findNumberOfArgumentsTyped(callback, value, index, array) {
       var testArgs = [value, index, array];
       for (var i = 3; i > 0; i--) {
         var args = testArgs.slice(0, i);
@@ -14318,39 +14390,52 @@
        * Applies a callback function to a reference to each element of the matrix
        * @memberof DenseMatrix
        * @param {Function} callback   The callback function is invoked with three
-       *                              parameters: an array, an integer index to that
-       *                              array, and the Matrix being traversed.
+       *                              parameters: the array containing the element,
+       *                              the index of the element within that array (as an integer),
+       *                              and for non unarry callbacks copy of the current index (as an array of integers).
        */
       DenseMatrix.prototype._forEach = function (callback) {
-        var me = this;
-        var s = me.size();
-        var maxDepth = s.length - 1;
-        if (maxDepth < 0) {
+        var isUnary = callback.length === 2; // callback has 2 parameters: value, index
+        var maxDepth = this._size.length - 1;
+        if (maxDepth < 0) return;
+        if (isUnary) {
+          iterateUnary(this._data);
           return;
         }
         if (maxDepth === 0) {
-          var thisSize = s[0];
-          for (var i = 0; i < thisSize; i++) {
-            callback(me._data, i, [i]);
+          for (var i = 0; i < this._data.length; i++) {
+            callback(this._data, i, [i]);
           }
           return;
         }
-        var index = Array(s.length);
-        function recurse(data, depth) {
-          var thisSize = s[depth];
+        var index = new Array(maxDepth + 1);
+        iterate(this._data);
+        function iterate(data) {
+          var depth = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
           if (depth < maxDepth) {
-            for (var _i = 0; _i < thisSize; _i++) {
+            for (var _i = 0; _i < data.length; _i++) {
               index[depth] = _i;
-              recurse(data[_i], depth + 1);
+              iterate(data[_i], depth + 1);
             }
           } else {
-            for (var _i2 = 0; _i2 < thisSize; _i2++) {
+            for (var _i2 = 0; _i2 < data.length; _i2++) {
               index[depth] = _i2;
               callback(data, _i2, index.slice());
             }
           }
         }
-        recurse(me._data, 0);
+        function iterateUnary(data) {
+          var depth = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+          if (depth < maxDepth) {
+            for (var _i3 = 0; _i3 < data.length; _i3++) {
+              iterateUnary(data[_i3], depth + 1);
+            }
+          } else {
+            for (var _i4 = 0; _i4 < data.length; _i4++) {
+              callback(data, _i4);
+            }
+          }
+        }
       };
 
       /**
@@ -14360,16 +14445,22 @@
        * @param {Function} callback   The callback function is invoked with three
        *                              parameters: the value of the element, the index
        *                              of the element, and the Matrix being traversed.
+       * @param {boolean} skipZeros   If true, the callback function is invoked only for non-zero entries
+       * @param {boolean} isUnary     If true, the callback function is invoked with one parameter
        *
        * @return {DenseMatrix} matrix
        */
       DenseMatrix.prototype.map = function (callback) {
+        var isUnary = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
         var me = this;
         var result = new DenseMatrix(me);
-        var fastCallback = optimizeCallback(callback, me._data, 'map');
-        result._forEach(function (arr, i, index) {
-          arr[i] = fastCallback(arr[i], index, me);
-        });
+        var fastCallback = optimizeCallback(callback, me._data, 'map', isUnary);
+        var applyCallback = isUnary || fastCallback.isUnary ? (arr, i) => {
+          arr[i] = fastCallback.fn(arr[i]);
+        } : (arr, i, index) => {
+          arr[i] = fastCallback.fn(arr[i], index, me);
+        };
+        result._forEach(applyCallback);
         return result;
       };
 
@@ -14379,13 +14470,19 @@
        * @param {Function} callback   The callback function is invoked with three
        *                              parameters: the value of the element, the index
        *                              of the element, and the Matrix being traversed.
+       * @param {boolean} skipZeros   If true, the callback function is invoked only for non-zero entries
+       * @param {boolean} isUnary     If true, the callback function is invoked with one parameter
        */
       DenseMatrix.prototype.forEach = function (callback) {
+        var isUnary = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
         var me = this;
-        var fastCallback = optimizeCallback(callback, me._data, 'map');
-        me._forEach(function (arr, i, index) {
-          fastCallback(arr[i], index, me);
-        });
+        var fastCallback = optimizeCallback(callback, me._data, 'map', isUnary);
+        var applyCallback = isUnary || fastCallback.isUnary ? (arr, i) => {
+          fastCallback.fn(arr[i]);
+        } : (arr, i, index) => {
+          fastCallback.fn(arr[i], index, me);
+        };
+        me._forEach(applyCallback);
       };
 
       /**
@@ -14409,15 +14506,15 @@
         var index = [];
         var _recurse = function* recurse(value, depth) {
           if (depth < maxDepth) {
-            for (var _i3 = 0; _i3 < value.length; _i3++) {
-              index[depth] = _i3;
-              yield* _recurse(value[_i3], depth + 1);
+            for (var _i5 = 0; _i5 < value.length; _i5++) {
+              index[depth] = _i5;
+              yield* _recurse(value[_i5], depth + 1);
             }
           } else {
-            for (var _i4 = 0; _i4 < value.length; _i4++) {
-              index[depth] = _i4;
+            for (var _i6 = 0; _i6 < value.length; _i6++) {
+              index[depth] = _i6;
               yield {
-                value: value[_i4],
+                value: value[_i6],
                 index: index.slice()
               };
             }
@@ -14779,14 +14876,14 @@
     function deepMap(array, callback, skipZeros) {
       if (!skipZeros) {
         if (isMatrix(array)) {
-          return array.map(x => callback(x));
+          return array.map(x => callback(x), false, true);
         } else {
           return deepMap$1(array, callback, true);
         }
       }
       var skipZerosCallback = x => x === 0 ? x : callback(x);
       if (isMatrix(array)) {
-        return array.map(x => skipZerosCallback(x));
+        return array.map(x => skipZerosCallback(x), false, true);
       } else {
         return deepMap$1(array, skipZerosCallback, true);
       }
@@ -15957,7 +16054,7 @@
         // invoke callback
         var invoke = function invoke(v, i, j) {
           // invoke callback
-          return fastCallback(v, [i, j], me);
+          return fastCallback.fn(v, [i, j], me);
         };
         // invoke _map
         return _map(this, 0, rows - 1, 0, columns - 1, invoke, skipZeros);
@@ -16075,7 +16172,8 @@
               var i = this._index[k];
 
               // value @ k
-              fastCallback(this._values[k], [i, j], me);
+              // TODO apply a non indexed version of algorithm in case fastCallback is not optimized
+              fastCallback.fn(this._values[k], [i, j], me);
             }
           } else {
             // create a cache holding all defined values
@@ -16089,7 +16187,7 @@
             // and either read the value or zero
             for (var _i7 = 0; _i7 < rows; _i7++) {
               var value = _i7 in values ? values[_i7] : 0;
-              fastCallback(value, [_i7, j], me);
+              fastCallback.fn(value, [_i7, j], me);
             }
           }
         }
