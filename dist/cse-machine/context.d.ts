@@ -4,6 +4,7 @@ import { Control } from './control';
 import { Environment } from './environment';
 import { CseError } from './error';
 import { Node, StatementSequence } from './types';
+import { NativeStorage } from '../types';
 export declare class Context {
     control: Control;
     stash: Stash;
@@ -22,6 +23,10 @@ export declare class Context {
         breakpointSteps: number[];
         changepointSteps: number[];
     };
+    /**
+     * Used for storing the native context and other values
+     */
+    nativeStorage: NativeStorage;
     constructor(program?: es.Program | StatementSequence, context?: Context);
     createGlobalEnvironment: () => Environment;
     createEmptyRuntime: () => {

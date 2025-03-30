@@ -1,6 +1,7 @@
 import * as es from 'estree';
 import { Value } from './cse-machine/stash';
 import { Context } from './cse-machine/context';
+import { ModuleFunctions } from './modules/moduleTypes';
 export declare class CSEBreak {
 }
 export declare enum ErrorType {
@@ -77,4 +78,13 @@ export declare class Representation {
     representation: string;
     constructor(representation: string);
     toString(value: any): string;
+}
+export interface NativeStorage {
+    builtins: Map<string, Value>;
+    previousProgramsIdentifiers: Set<string>;
+    operators: Map<string, (...operands: Value[]) => Value>;
+    maxExecTime: number;
+    evaller: null | ((program: string) => Value);
+    loadedModules: Record<string, ModuleFunctions>;
+    loadedModuleTypes: Record<string, Record<string, string>>;
 }

@@ -3,6 +3,7 @@ import { Context } from "../../../cse-machine/context";
 import { BasicEvaluator } from "../BasicEvaluator";
 import { IRunnerPlugin } from "./IRunnerPlugin";
 import { IOptions } from "../../../";
+import { Finished } from "../../../types";
 
 const defaultContext = new Context();
 const defaultOptions: IOptions = {
@@ -28,8 +29,7 @@ export class PyEvaluator extends BasicEvaluator {
                 this.context,
                 this.options
             );
-            this.conductor.sendOutput(`Result: ${result.representation.toString(result.value)}`);
-            //this.conductor.sendOutput(`Result: 6`);
+            this.conductor.sendOutput(`${(result as Finished).representation.toString((result as Finished).value)}`);
         } catch (error) {
             this.conductor.sendOutput(`Error: ${error instanceof Error ? error.message : error}`);
         }

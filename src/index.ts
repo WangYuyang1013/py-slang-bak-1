@@ -17,6 +17,7 @@ import { Finished, RecursivePartial, Result } from "./types";
 import { runCSEMachine } from "./runner/pyRunner";
 import { initialise } from "./conductor/runner/util/initialise";
 import { PyEvaluator } from "./conductor/runner/types/PyEvaluator";
+import path from "path";
 
 export function parsePythonToEstreeAst(code: string,
     variant: number = 1,
@@ -130,13 +131,55 @@ export async function runInContext(
     return result;
 }
 
-// local test only
+//local test only
 // const context = new Context();
 // const options: IOptions = {
 //     isPrelude: false,
 //     envSteps: 100000,
 //     stepLimit: 100000
 // };
+// import { promises as fs1 } from 'fs';
+// import * as os from 'os';
+// async function loadModulesFromServer(context: Context, baseURL: string): Promise<void> {
+//     // 先获取 modules.json 文件
+//     const modulesJsonUrl = `${baseURL}/modules.json`;
+//     const response = await fetch(modulesJsonUrl);
+//     if (!response.ok) {
+//       throw new Error(`Failed to load modules.json from ${modulesJsonUrl}`);
+//     }
+//     const modulesData: Record<string, any> = await response.json();
+  
+//     // modulesData 假定格式为 { moduleName1: {...}, moduleName2: {...}, ... }
+//     // 遍历每个模块名，加载对应模块
+//     for (const moduleName in modulesData) {
+//       // 构造模块文件的 URL，假设文件名与模块名相同，并以 .js 结尾
+//       const moduleUrl = `${baseURL}/bundles/${moduleName}.js`;
+//       const moduleResponse = await fetch(moduleUrl);
+//       if (!moduleResponse.ok) {
+//         console.warn(`Failed to load module ${moduleName} from ${moduleUrl}`);
+//         continue;
+//       }
+//       const moduleSource = await moduleResponse.text();
+  
+//       // 评估模块文件，获取其导出对象
+//       // 注意：这里使用 eval 仅作为示例，实际项目中应考虑安全和沙箱策略
+//     //   let moduleExports;
+//     //   try {
+//     //     moduleExports = eval(moduleSource);
+//     //   } catch (e) {
+//     //     console.error(`Error evaluating module ${moduleName}:`, e);
+//     //     continue;
+//     //   }
+    
+//     const tmpFile = path.join(os.tmpdir(), path.basename(moduleUrl));
+//         fs1.writeFile(tmpFile, moduleSource);
+//         // 动态 import 使用 file:// 协议
+//         const moduleExports =  await import('file://' + tmpFile);
+//       // 将模块导出对象存入 nativeStorage.loadedModules
+//       context.nativeStorage.loadedModules[moduleName] = moduleExports;
+//     }
+//     console.info(context.nativeStorage);
+// }
 
 // const BaseParserError = ParserErrors.BaseParserError;
 // const BaseTokenizerError = TokenizerErrors.BaseTokenizerError;
@@ -178,6 +221,8 @@ export async function runInContext(
 //       const filePath = process.argv[2];
   
 //       try {
+//         //await loadModulesFromServer(context, "http://localhost:8022");
+
 //         const code = fs.readFileSync(filePath, "utf8") + "\n";
 //         console.log(`Parsing Python file: ${filePath}`);
   
@@ -193,9 +238,5 @@ export async function runInContext(
 //     })();
 // }
 
-
-//conductor/runner/types/IEvaluator
-//conductor/runner/BasicEvaluator
-//conductor/runner/util/initialise
-const {runnerPlugin, conduit} = initialise(PyEvaluator);
+//const {runnerPlugin, conduit} = initialise(PyEvaluator);
 

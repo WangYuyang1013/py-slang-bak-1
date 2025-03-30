@@ -2,6 +2,7 @@ import * as es from 'estree'
 import { str, toPythonString } from './stdlib'
 import { Value } from './cse-machine/stash'
 import { Context } from './cse-machine/context'
+import { ModuleFunctions } from './modules/moduleTypes'
 
 export class CSEBreak {}
 
@@ -296,4 +297,19 @@ export class Representation {
         const result = toPythonString(value);
         return result;
     }
+}
+
+export interface NativeStorage {
+    builtins: Map<string, Value>
+    previousProgramsIdentifiers: Set<string>
+    operators: Map<string, (...operands: Value[]) => Value>
+    maxExecTime: number
+    evaller: null | ((program: string) => Value)
+    /*
+    the first time evaller is used, it must be used directly like `eval(code)` to inherit
+    surrounding scope, so we cannot set evaller to `eval` directly. subsequent assignments to evaller will
+    close in the surrounding values, so no problem
+     */
+    loadedModules: Record<string, ModuleFunctions>
+    loadedModuleTypes: Record<string, Record<string, string>>
 }

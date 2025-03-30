@@ -1,5 +1,5 @@
 import * as es from 'estree';
-import { Stash } from './stash';
+import { Stash, Value } from './stash';
 import { Control, ControlItem } from './control';
 import { createSimpleEnvironment, createProgramEnvironment, Environment } from './environment';
 import { CseError } from './error';
@@ -14,6 +14,7 @@ import {
   Node,
   StatementSequence
 } from './types'
+import { NativeStorage } from '../types';
 
 export class Context {
   public control: Control;
@@ -35,7 +36,11 @@ export class Context {
     breakpointSteps: number[]
     changepointSteps: number[]
   }
-  //public nodes: ;
+  
+  /**
+   * Used for storing the native context and other values
+   */
+  nativeStorage: NativeStorage
 
   constructor(program?: es.Program | StatementSequence, context?: Context) {
     this.control = new Control(program);
@@ -46,6 +51,15 @@ export class Context {
       const globalEnvironment = this.createGlobalEnvironment()
       this.runtime.environments.push(globalEnvironment)
       this.runtime.environmentTree.insert(globalEnvironment)
+    }
+    this.nativeStorage = {
+      builtins: new Map<string, Value>(),
+      previousProgramsIdentifiers: new Set<string>(),
+      operators: new Map<string, (...operands: Value[]) => Value>(),
+      maxExecTime: 1000,
+      evaller: null,
+      loadedModules: {},
+      loadedModuleTypes: {}
     }
   }
 

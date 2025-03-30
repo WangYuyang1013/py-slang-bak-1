@@ -21,44 +21,6 @@
     /* global Reflect, Promise, SuppressedError, Symbol, Iterator */
 
 
-    function __esDecorate(ctor, descriptorIn, decorators, contextIn, initializers, extraInitializers) {
-        function accept(f) { if (f !== void 0 && typeof f !== "function") throw new TypeError("Function expected"); return f; }
-        var kind = contextIn.kind, key = kind === "getter" ? "get" : kind === "setter" ? "set" : "value";
-        var target = !descriptorIn && ctor ? contextIn["static"] ? ctor : ctor.prototype : null;
-        var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
-        var _, done = false;
-        for (var i = decorators.length - 1; i >= 0; i--) {
-            var context = {};
-            for (var p in contextIn) context[p] = p === "access" ? {} : contextIn[p];
-            for (var p in contextIn.access) context.access[p] = contextIn.access[p];
-            context.addInitializer = function (f) { if (done) throw new TypeError("Cannot add initializers after decoration has completed"); extraInitializers.push(accept(f || null)); };
-            var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context);
-            if (kind === "accessor") {
-                if (result === void 0) continue;
-                if (result === null || typeof result !== "object") throw new TypeError("Object expected");
-                if (_ = accept(result.get)) descriptor.get = _;
-                if (_ = accept(result.set)) descriptor.set = _;
-                if (_ = accept(result.init)) initializers.unshift(_);
-            }
-            else if (_ = accept(result)) {
-                if (kind === "field") initializers.unshift(_);
-                else descriptor[key] = _;
-            }
-        }
-        if (target) Object.defineProperty(target, contextIn.name, descriptor);
-        done = true;
-    }
-    function __runInitializers(thisArg, initializers, value) {
-        var useValue = arguments.length > 2;
-        for (var i = 0; i < initializers.length; i++) {
-            value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
-        }
-        return useValue ? value : void 0;
-    }
-    function __setFunctionName(f, name, prefix) {
-        if (typeof name === "symbol") name = name.description ? "[".concat(name.description, "]") : "";
-        return Object.defineProperty(f, "name", { configurable: true, value: prefix ? "".concat(prefix, " ", name) : name });
-    }
     function __awaiter(thisArg, _arguments, P, generator) {
         function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
         return new (P || (P = Promise))(function (resolve, reject) {
@@ -23209,6 +23171,7 @@
     var levenshteinExports = requireLevenshtein();
     var levenshtein = /*@__PURE__*/getDefaultExportFromCjs(levenshteinExports);
 
+    // const levenshtein = require('fast-levenshtein');
     const RedefineableTokenSentinel = new Token(TokenType.AT, "", 0, 0, 0);
     class Environment {
         constructor(source, enclosing, names) {
@@ -24480,6 +24443,37 @@
             return mod + b;
         }
     }
+    function hasImportDeclarations(node) {
+        for (const statement of node.body) {
+            if (statement.type === 'ImportDeclaration') {
+                return true;
+            }
+        }
+        return false;
+    }
+    const isImportDeclaration = (node) => node.type === 'ImportDeclaration';
+    function getModuleDeclarationSource(node) {
+        var _a, _b;
+        assert(typeof ((_a = node.source) === null || _a === void 0 ? void 0 : _a.value) === 'string', `Expected ${node.type} to have a source value of type string, got ${(_b = node.source) === null || _b === void 0 ? void 0 : _b.value}`);
+        return node.source.value;
+    }
+    class AssertionError extends RuntimeSourceError {
+        constructor(message) {
+            super();
+            this.message = message;
+        }
+        explain() {
+            return this.message;
+        }
+        elaborate() {
+            return 'Please contact the administrators to let them know that this error has occurred';
+        }
+    }
+    function assert(condition, message) {
+        if (!condition) {
+            throw new AssertionError(message);
+        }
+    }
 
     class Control extends Stack {
         constructor(program) {
@@ -24969,6 +24963,93 @@
     }
 
     /**
+     * Python style dictionary
+     */
+    class Dict {
+        constructor(internalMap = new Map()) {
+            this.internalMap = internalMap;
+        }
+        get size() {
+            return this.internalMap.size;
+        }
+        [Symbol.iterator]() {
+            return this.internalMap[Symbol.iterator]();
+        }
+        get(key) {
+            return this.internalMap.get(key);
+        }
+        set(key, value) {
+            return this.internalMap.set(key, value);
+        }
+        has(key) {
+            return this.internalMap.has(key);
+        }
+        /**
+         * Similar to how the python dictionary's setdefault function works:
+         * If the key is not present, it is set to the given value, then that value is returned
+         * Otherwise, `setdefault` returns the value stored in the dictionary without
+         * modifying it
+         */
+        setdefault(key, value) {
+            if (!this.has(key)) {
+                this.set(key, value);
+            }
+            return this.get(key);
+        }
+        update(key, defaultVal, updater) {
+            const value = this.setdefault(key, defaultVal);
+            const newValue = updater(value);
+            this.set(key, newValue);
+            return newValue;
+        }
+        entries() {
+            return [...this.internalMap.entries()];
+        }
+        forEach(func) {
+            this.internalMap.forEach((v, k) => func(k, v));
+        }
+        /**
+         * Similar to `mapAsync`, but for an async mapping function that does not return any value
+         */
+        forEachAsync(func) {
+            return __awaiter(this, void 0, void 0, function* () {
+                yield Promise.all(this.map((key, value, i) => func(key, value, i)));
+            });
+        }
+        map(func) {
+            return this.entries().map(([k, v], i) => func(k, v, i));
+        }
+        /**
+         * Using a mapping function that returns a promise, transform a map
+         * to another map with different keys and values. All calls to the mapping function
+         * execute asynchronously
+         */
+        mapAsync(func) {
+            return Promise.all(this.map((key, value, i) => func(key, value, i)));
+        }
+        flatMap(func) {
+            return this.entries().flatMap(([k, v], i) => func(k, v, i));
+        }
+    }
+    /**
+     * Convenience class for maps that store an array of values
+     */
+    class ArrayMap extends Dict {
+        add(key, item) {
+            this.setdefault(key, []).push(item);
+        }
+    }
+    function filterImportDeclarations({ body }) {
+        return body.reduce(([importNodes, otherNodes], node) => {
+            if (!isImportDeclaration(node))
+                return [importNodes, [...otherNodes, node]];
+            const moduleName = getModuleDeclarationSource(node);
+            importNodes.add(moduleName, node);
+            return [importNodes, otherNodes];
+        }, [new ArrayMap(), []]);
+    }
+
+    /**
      * This interpreter implements an explicit-control evaluator.
      *
      * Heavily adapted from https://github.com/source-academy/JSpike/
@@ -25020,6 +25101,46 @@
             context.runtime.isRunning = false;
         }
     }
+    function evaluateImports(program, context) {
+        try {
+            console.info('evaluete imports');
+            const [importNodeMap] = filterImportDeclarations(program);
+            const environment = currentEnvironment(context);
+            for (const [moduleName, nodes] of importNodeMap) {
+                const functions = context.nativeStorage.loadedModules[moduleName];
+                for (const node of nodes) {
+                    for (const spec of node.specifiers) {
+                        declareIdentifier(context, spec.local.name, node, environment);
+                        let obj;
+                        switch (spec.type) {
+                            case 'ImportSpecifier': {
+                                if (spec.imported.type === 'Identifier') {
+                                    obj = functions[spec.imported.name];
+                                }
+                                else {
+                                    throw new Error(`Unexpected literal import: ${spec.imported.value}`);
+                                }
+                                //obj = functions[(spec.imported).name]
+                                break;
+                            }
+                            case 'ImportDefaultSpecifier': {
+                                obj = functions.default;
+                                break;
+                            }
+                            case 'ImportNamespaceSpecifier': {
+                                obj = functions;
+                                break;
+                            }
+                        }
+                        defineVariable(context, spec.local.name, obj, true, node);
+                    }
+                }
+            }
+        }
+        catch (error) {
+            handleRuntimeError(context, error);
+        }
+    }
     /**
      * The primary runner/loop of the explicit control evaluator.
      *
@@ -25063,8 +25184,8 @@
         }
         while (command) {
             // For local debug only
-            // console.info('next command to be evaluated');
-            // console.info(command);
+            console.info('next command to be evaluated');
+            console.info(command);
             // Return to capture a snapshot of the control and stash after the target step count is reached
             if (!isPrelude && steps === envSteps) {
                 yield { stash, control, steps };
@@ -25113,12 +25234,13 @@
                 currentEnvironment(context).name !== 'prelude') {
                 popEnvironment(context);
             }
-            if (hasDeclarations(command)) {
+            if (hasDeclarations(command) || hasImportDeclarations(command)) {
                 if (currentEnvironment(context).name != 'programEnvironment') {
                     const programEnv = createProgramEnvironment(context, isPrelude);
                     pushEnvironment(context, programEnv);
                 }
                 const environment = currentEnvironment(context);
+                evaluateImports(command, context);
                 declareFunctionsAndVariables(context, command, environment);
             }
             if (command.body.length === 1) {
@@ -25300,9 +25422,7 @@
         // ) {
         //   control.push(instr.breakInstr(command));
         // },
-        // ImportDeclaration: function () {
-        //   
-        // },
+        ImportDeclaration: function () { },
         /**
          * Expressions
          */
@@ -25761,766 +25881,6 @@
         return CSEResultPromise(context, value);
     }
 
-    /**
-     * Generic Conductor Error.
-     */
-    class ConductorError extends Error {
-        constructor(message) {
-            super(message);
-            this.name = "ConductorError";
-            this.errorType = "__unknown" /* ErrorType.UNKNOWN */;
-        }
-    }
-
-    /**
-     * Conductor internal error, probably caused by developer oversight.
-     */
-    class ConductorInternalError extends ConductorError {
-        constructor(message) {
-            super(message);
-            this.name = "ConductorInternalError";
-            this.errorType = "__internal" /* ErrorType.INTERNAL */;
-        }
-    }
-
-    class BasicEvaluator {
-        startEvaluator(entryPoint) {
-            return __awaiter(this, void 0, void 0, function* () {
-                const initialChunk = yield this.conductor.requestFile(entryPoint);
-                if (!initialChunk)
-                    throw new ConductorInternalError("Cannot load entrypoint file");
-                yield this.evaluateFile(entryPoint, initialChunk);
-                while (true) {
-                    const chunk = yield this.conductor.requestChunk();
-                    yield this.evaluateChunk(chunk);
-                }
-            });
-        }
-        /**
-         * Evaluates a file.
-         * @param fileName The name of the file to be evaluated.
-         * @param fileContent The content of the file to be evaluated.
-         * @returns A promise that resolves when the evaluation is complete.
-         */
-        evaluateFile(fileName, fileContent) {
-            return __awaiter(this, void 0, void 0, function* () {
-                return this.evaluateChunk(fileContent);
-            });
-        }
-        constructor(conductor) {
-            this.conductor = conductor;
-        }
-    }
-
-    /**
-     * Imports an external plugin from a given location.
-     * @param location Where to find the external plugin.
-     * @returns A promise resolving to the imported plugin.
-     */
-    function importExternalPlugin(location) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const plugin = (yield import(/* webpackIgnore: true */ location)).plugin;
-            // TODO: verify it is actually a plugin
-            return plugin;
-        });
-    }
-
-    /**
-     * Imports an external module from a given location.
-     * @param location Where to find the external module.
-     * @returns A promise resolving to the imported module.
-     */
-    function importExternalModule(location) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const plugin = yield importExternalPlugin(location);
-            // TODO: additional verification it is a module
-            return plugin;
-        });
-    }
-
-    class Channel {
-        send(message, transfer) {
-            this.__verifyAlive();
-            this.__port.postMessage(message, transfer !== null && transfer !== void 0 ? transfer : []);
-        }
-        subscribe(subscriber) {
-            this.__verifyAlive();
-            this.__subscribers.add(subscriber);
-            if (this.__waitingMessages) {
-                for (const data of this.__waitingMessages) {
-                    subscriber(data);
-                }
-                delete this.__waitingMessages;
-            }
-        }
-        unsubscribe(subscriber) {
-            this.__verifyAlive();
-            this.__subscribers.delete(subscriber);
-        }
-        close() {
-            var _a;
-            this.__verifyAlive();
-            this.__isAlive = false;
-            (_a = this.__port) === null || _a === void 0 ? void 0 : _a.close();
-        }
-        /**
-         * Check if this Channel is allowed to be used.
-         * @throws Throws an error if the Channel has been closed.
-         */
-        __verifyAlive() {
-            if (!this.__isAlive)
-                throw new ConductorInternalError(`Channel ${this.name} has been closed`);
-        }
-        /**
-         * Dispatch some data to subscribers.
-         * @param data The data to be dispatched to subscribers.
-         */
-        __dispatch(data) {
-            this.__verifyAlive();
-            if (this.__waitingMessages) {
-                this.__waitingMessages.push(data);
-            }
-            else {
-                for (const subscriber of this.__subscribers) {
-                    subscriber(data);
-                }
-            }
-        }
-        /**
-         * Listens to the port's message event, and starts the port.
-         * Messages will be buffered until the first subscriber listens to the Channel.
-         * @param port The MessagePort to listen to.
-         */
-        listenToPort(port) {
-            port.addEventListener("message", e => this.__dispatch(e.data));
-            port.start();
-        }
-        /**
-         * Replaces the underlying MessagePort of this Channel and closes it, and starts the new port.
-         * @param port The new port to use.
-         */
-        replacePort(port) {
-            var _a;
-            this.__verifyAlive();
-            (_a = this.__port) === null || _a === void 0 ? void 0 : _a.close();
-            this.__port = port;
-            this.listenToPort(port);
-        }
-        constructor(name, port) {
-            /** The callbacks subscribed to this Channel. */
-            this.__subscribers = new Set(); // TODO: use WeakRef? but callbacks tend to be thrown away and leaking is better than incorrect behaviour
-            /** Is the Channel allowed to be used? */
-            this.__isAlive = true;
-            this.__waitingMessages = [];
-            this.name = name;
-            this.replacePort(port);
-        }
-    }
-
-    /**
-     * A stack-based queue implementation.
-     * `push` and `pop` run in amortized constant time.
-     */
-    class Queue {
-        constructor() {
-            /** The output stack. */
-            this.__s1 = [];
-            /** The input stack. */
-            this.__s2 = [];
-        }
-        /**
-         * Adds an item to the queue.
-         * @param item The item to be added to the queue.
-         */
-        push(item) {
-            this.__s2.push(item);
-        }
-        /**
-         * Removes an item from the queue.
-         * @returns The item removed from the queue.
-         * @throws If the queue is empty.
-         */
-        pop() {
-            if (this.__s1.length === 0) {
-                if (this.__s2.length === 0)
-                    throw new Error("queue is empty");
-                let temp = this.__s1;
-                this.__s1 = this.__s2.reverse();
-                this.__s2 = temp;
-            }
-            return this.__s1.pop(); // as the length is nonzero
-        }
-        /**
-         * The length of the queue.
-         */
-        get length() {
-            return this.__s1.length + this.__s2.length;
-        }
-        /**
-         * Makes a copy of the queue.
-         * @returns A copy of the queue.
-         */
-        clone() {
-            const newQueue = new Queue();
-            newQueue.__s1 = [...this.__s1];
-            newQueue.__s2 = [...this.__s2];
-            return newQueue;
-        }
-    }
-
-    class MessageQueue {
-        push(item) {
-            if (this.__promiseQueue.length !== 0)
-                this.__promiseQueue.pop()(item);
-            else
-                this.__inputQueue.push(item);
-        }
-        pop() {
-            return __awaiter(this, void 0, void 0, function* () {
-                if (this.__inputQueue.length !== 0)
-                    return this.__inputQueue.pop();
-                return new Promise((resolve, _reject) => {
-                    this.__promiseQueue.push(resolve);
-                });
-            });
-        }
-        tryPop() {
-            if (this.__inputQueue.length !== 0)
-                return this.__inputQueue.pop();
-            return undefined;
-        }
-        constructor() {
-            this.__inputQueue = new Queue();
-            this.__promiseQueue = new Queue();
-            this.push = this.push.bind(this);
-        }
-    }
-
-    class ChannelQueue {
-        receive() {
-            return __awaiter(this, void 0, void 0, function* () {
-                return this.__messageQueue.pop();
-            });
-        }
-        tryReceive() {
-            return this.__messageQueue.tryPop();
-        }
-        send(message, transfer) {
-            this.__channel.send(message, transfer);
-        }
-        close() {
-            this.__channel.unsubscribe(this.__messageQueue.push);
-        }
-        constructor(channel) {
-            this.__messageQueue = new MessageQueue();
-            this.name = channel.name;
-            this.__channel = channel;
-            this.__channel.subscribe(this.__messageQueue.push);
-        }
-    }
-
-    class Conduit {
-        __negotiateChannel(channelName) {
-            const { port1, port2 } = new MessageChannel();
-            const channel = new Channel(channelName, port1);
-            this.__link.postMessage([channelName, port2], [port2]); // TODO: update communication protocol?
-            this.__channels.set(channelName, channel);
-        }
-        __verifyAlive() {
-            if (!this.__alive)
-                throw new ConductorInternalError("Conduit already terminated");
-        }
-        registerPlugin(pluginClass, ...arg) {
-            this.__verifyAlive();
-            const attachedChannels = [];
-            for (const channelName of pluginClass.channelAttach) {
-                if (!this.__channels.has(channelName))
-                    this.__negotiateChannel(channelName);
-                attachedChannels.push(this.__channels.get(channelName)); // as the Channel has been negotiated
-            }
-            const plugin = new pluginClass(this, attachedChannels, ...arg);
-            if (plugin.name !== undefined) {
-                if (this.__pluginMap.has(plugin.name))
-                    throw new ConductorInternalError(`Plugin ${plugin.name} already registered`);
-                this.__pluginMap.set(plugin.name, plugin);
-            }
-            this.__plugins.push(plugin);
-            return plugin;
-        }
-        unregisterPlugin(plugin) {
-            var _a;
-            this.__verifyAlive();
-            let p = 0;
-            for (let i = 0; i < this.__plugins.length; ++i) {
-                if (this.__plugins[p] === plugin)
-                    ++p;
-                this.__plugins[i] = this.__plugins[i + p];
-            }
-            for (let i = this.__plugins.length - 1, e = this.__plugins.length - p; i >= e; --i) {
-                delete this.__plugins[i];
-            }
-            if (plugin.name) {
-                this.__pluginMap.delete(plugin.name);
-            }
-            (_a = plugin.destroy) === null || _a === void 0 ? void 0 : _a.call(plugin);
-        }
-        lookupPlugin(pluginName) {
-            this.__verifyAlive();
-            if (!this.__pluginMap.has(pluginName))
-                throw new ConductorInternalError(`Plugin ${pluginName} not registered`);
-            return this.__pluginMap.get(pluginName); // as the map has been checked
-        }
-        terminate() {
-            var _a, _b, _c;
-            this.__verifyAlive();
-            for (const plugin of this.__plugins) {
-                //this.unregisterPlugin(plugin);
-                (_a = plugin.destroy) === null || _a === void 0 ? void 0 : _a.call(plugin);
-            }
-            (_c = (_b = this.__link).terminate) === null || _c === void 0 ? void 0 : _c.call(_b);
-            this.__alive = false;
-        }
-        __handlePort(data) {
-            const [channelName, port] = data;
-            if (this.__channels.has(channelName)) { // uh-oh, we already have a port for this channel
-                const channel = this.__channels.get(channelName); // as the map has been checked
-                if (this.__parent) { // extract the data and discard the messageport; child's Channel will close it
-                    channel.listenToPort(port);
-                }
-                else { // replace our messageport; Channel will close it
-                    channel.replacePort(port);
-                }
-            }
-            else { // register the new channel
-                const channel = new Channel(channelName, port);
-                this.__channels.set(channelName, channel);
-            }
-        }
-        constructor(link, parent = false) {
-            this.__alive = true;
-            this.__channels = new Map();
-            this.__pluginMap = new Map();
-            this.__plugins = [];
-            this.__link = link;
-            link.addEventListener("message", e => this.__handlePort(e.data));
-            this.__parent = parent;
-        }
-    }
-
-    class RpcCallMessage {
-        constructor(fn, args, invokeId) {
-            this.type = 0 /* RpcMessageType.CALL */;
-            this.data = { fn, args, invokeId };
-        }
-    }
-
-    class RpcErrorMessage {
-        constructor(invokeId, err) {
-            this.type = 2 /* RpcMessageType.RETURN_ERR */;
-            this.data = { invokeId, err };
-        }
-    }
-
-    class RpcReturnMessage {
-        constructor(invokeId, res) {
-            this.type = 1 /* RpcMessageType.RETURN */;
-            this.data = { invokeId, res };
-        }
-    }
-
-    function makeRpc(channel, self) {
-        const waiting = [];
-        let invocations = 0;
-        const otherCallbacks = {};
-        channel.subscribe((rpcMessage) => __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
-            switch (rpcMessage.type) {
-                case 0 /* RpcMessageType.CALL */:
-                    {
-                        const { fn, args, invokeId } = rpcMessage.data;
-                        try {
-                            // @ts-expect-error
-                            const res = yield self[fn](...args);
-                            if (invokeId > 0)
-                                channel.send(new RpcReturnMessage(invokeId, res));
-                        }
-                        catch (err) {
-                            if (invokeId > 0)
-                                channel.send(new RpcErrorMessage(invokeId, err));
-                        }
-                        break;
-                    }
-                case 1 /* RpcMessageType.RETURN */:
-                    {
-                        const { invokeId, res } = rpcMessage.data;
-                        (_b = (_a = waiting[invokeId]) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.call(_a, res);
-                        delete waiting[invokeId];
-                        break;
-                    }
-                case 2 /* RpcMessageType.RETURN_ERR */:
-                    {
-                        const { invokeId, err } = rpcMessage.data;
-                        (_d = (_c = waiting[invokeId]) === null || _c === void 0 ? void 0 : _c[1]) === null || _d === void 0 ? void 0 : _d.call(_c, err);
-                        delete waiting[invokeId];
-                        break;
-                    }
-            }
-        }));
-        return new Proxy(otherCallbacks, {
-            get(target, p, receiver) {
-                const cb = Reflect.get(target, p, receiver);
-                if (cb)
-                    return cb;
-                const newCallback = typeof p === "string" && p.charAt(0) === "$"
-                    ? (...args) => {
-                        channel.send(new RpcCallMessage(p, args, 0));
-                    }
-                    : (...args) => {
-                        const invokeId = ++invocations;
-                        channel.send(new RpcCallMessage(p, args, invokeId));
-                        return new Promise((resolve, reject) => {
-                            waiting[invokeId] = [resolve, reject];
-                        });
-                    };
-                Reflect.set(target, p, newCallback, receiver);
-                return newCallback;
-            },
-        });
-    }
-
-    /**
-     * Typechecking utility decorator.
-     * It is recommended that usage of this decorator is removed
-     * before or during the build process, as some tools
-     * (e.g. terser) do not have good support for class decorators.
-     * @param _pluginClass The Class to be typechecked.
-     */
-    function checkIsPluginClass(_pluginClass) {
-    }
-
-    var DataType;
-    (function (DataType) {
-        /** The return type of functions with no returned value. As a convention, the associated JS value is undefined. */
-        DataType[DataType["VOID"] = 0] = "VOID";
-        /** A Boolean value. */
-        DataType[DataType["BOOLEAN"] = 1] = "BOOLEAN";
-        /** A numerical value. */
-        DataType[DataType["NUMBER"] = 2] = "NUMBER";
-        /** An immutable string of characters. */
-        DataType[DataType["CONST_STRING"] = 3] = "CONST_STRING";
-        /** The empty list. As a convention, the associated JS value is null. */
-        DataType[DataType["EMPTY_LIST"] = 4] = "EMPTY_LIST";
-        /** A pair of values. Reference type. */
-        DataType[DataType["PAIR"] = 5] = "PAIR";
-        /** An array of values of a single type. Reference type. */
-        DataType[DataType["ARRAY"] = 6] = "ARRAY";
-        /** A value that can be called with fixed arity. Reference type. */
-        DataType[DataType["CLOSURE"] = 7] = "CLOSURE";
-        /** An opaque value that cannot be manipulated from user code. */
-        DataType[DataType["OPAQUE"] = 8] = "OPAQUE";
-        /** A list (either a pair or the empty list). */
-        DataType[DataType["LIST"] = 9] = "LIST";
-    })(DataType || (DataType = {}));
-
-    class AbortServiceMessage {
-        constructor(minVersion) {
-            this.type = 1 /* ServiceMessageType.ABORT */;
-            this.data = { minVersion: minVersion };
-        }
-    }
-
-    class HelloServiceMessage {
-        constructor() {
-            this.type = 0 /* ServiceMessageType.HELLO */;
-            this.data = { version: 0 /* Constant.PROTOCOL_VERSION */ };
-        }
-    }
-
-    class PluginServiceMessage {
-        constructor(pluginName) {
-            this.type = 3 /* ServiceMessageType.PLUGIN */;
-            this.data = pluginName;
-        }
-    }
-
-    let RunnerPlugin = (() => {
-        let _classDecorators = [checkIsPluginClass];
-        let _classDescriptor;
-        let _classExtraInitializers = [];
-        let _classThis;
-        _classThis = class {
-            requestFile(fileName) {
-                return this.__fileRpc.requestFile(fileName);
-            }
-            requestChunk() {
-                return __awaiter(this, void 0, void 0, function* () {
-                    return (yield this.__chunkQueue.receive()).chunk;
-                });
-            }
-            requestInput() {
-                return __awaiter(this, void 0, void 0, function* () {
-                    const { message } = yield this.__ioQueue.receive();
-                    return message;
-                });
-            }
-            tryRequestInput() {
-                const out = this.__ioQueue.tryReceive();
-                return out === null || out === void 0 ? void 0 : out.message;
-            }
-            sendOutput(message) {
-                this.__ioQueue.send({ message });
-            }
-            sendError(error) {
-                this.__errorChannel.send({ error });
-            }
-            updateStatus(status, isActive) {
-                this.__statusChannel.send({ status, isActive });
-            }
-            hostLoadPlugin(pluginName) {
-                this.__serviceChannel.send(new PluginServiceMessage(pluginName));
-            }
-            registerPlugin(pluginClass, ...arg) {
-                return this.__conduit.registerPlugin(pluginClass, ...arg);
-            }
-            unregisterPlugin(plugin) {
-                this.__conduit.unregisterPlugin(plugin);
-            }
-            registerModule(moduleClass) {
-                if (!this.__isCompatibleWithModules)
-                    throw new ConductorInternalError("Evaluator has no data interface");
-                return this.registerPlugin(moduleClass, this.__evaluator);
-            }
-            unregisterModule(module) {
-                this.unregisterPlugin(module);
-            }
-            importAndRegisterExternalPlugin(location, ...arg) {
-                return __awaiter(this, void 0, void 0, function* () {
-                    const pluginClass = yield importExternalPlugin(location);
-                    return this.registerPlugin(pluginClass, ...arg);
-                });
-            }
-            importAndRegisterExternalModule(location) {
-                return __awaiter(this, void 0, void 0, function* () {
-                    const moduleClass = yield importExternalModule(location);
-                    return this.registerModule(moduleClass);
-                });
-            }
-            constructor(conduit, [fileChannel, chunkChannel, serviceChannel, ioChannel, errorChannel, statusChannel], evaluatorClass) {
-                var _a;
-                this.name = "__runner_main" /* InternalPluginName.RUNNER_MAIN */;
-                // @ts-expect-error TODO: figure proper way to typecheck this
-                this.__serviceHandlers = new Map([
-                    [0 /* ServiceMessageType.HELLO */, function helloServiceHandler(message) {
-                            if (message.data.version < 0 /* Constant.PROTOCOL_MIN_VERSION */) {
-                                this.__serviceChannel.send(new AbortServiceMessage(0 /* Constant.PROTOCOL_MIN_VERSION */));
-                                console.error(`Host's protocol version (${message.data.version}) must be at least ${0 /* Constant.PROTOCOL_MIN_VERSION */}`);
-                            }
-                            else {
-                                console.log(`Host is using protocol version ${message.data.version}`);
-                            }
-                        }],
-                    [1 /* ServiceMessageType.ABORT */, function abortServiceHandler(message) {
-                            console.error(`Host expects at least protocol version ${message.data.minVersion}, but we are on version ${0 /* Constant.PROTOCOL_VERSION */}`);
-                            this.__conduit.terminate();
-                        }],
-                    [2 /* ServiceMessageType.ENTRY */, function entryServiceHandler(message) {
-                            this.__evaluator.startEvaluator(message.data);
-                        }]
-                ]);
-                this.__conduit = conduit;
-                this.__fileRpc = makeRpc(fileChannel, {});
-                this.__chunkQueue = new ChannelQueue(chunkChannel);
-                this.__serviceChannel = serviceChannel;
-                this.__ioQueue = new ChannelQueue(ioChannel);
-                this.__errorChannel = errorChannel;
-                this.__statusChannel = statusChannel;
-                this.__serviceChannel.send(new HelloServiceMessage());
-                this.__serviceChannel.subscribe(message => {
-                    var _a;
-                    (_a = this.__serviceHandlers.get(message.type)) === null || _a === void 0 ? void 0 : _a.call(this, message);
-                });
-                this.__evaluator = new evaluatorClass(this);
-                this.__isCompatibleWithModules = (_a = this.__evaluator.hasDataInterface) !== null && _a !== void 0 ? _a : false;
-            }
-        };
-        __setFunctionName(_classThis, "RunnerPlugin");
-        (() => {
-            const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(null) : void 0;
-            __esDecorate(null, _classDescriptor = { value: _classThis }, _classDecorators, { kind: "class", name: _classThis.name, metadata: _metadata }, null, _classExtraInitializers);
-            _classThis = _classDescriptor.value;
-            if (_metadata) Object.defineProperty(_classThis, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
-        })();
-        _classThis.channelAttach = ["__file_rpc" /* InternalChannelName.FILE */, "__chunk" /* InternalChannelName.CHUNK */, "__service" /* InternalChannelName.SERVICE */, "__stdio" /* InternalChannelName.STANDARD_IO */, "__error" /* InternalChannelName.ERROR */, "__status" /* InternalChannelName.STATUS */];
-        (() => {
-            __runInitializers(_classThis, _classExtraInitializers);
-        })();
-        return _classThis;
-    })();
-
-    /**
-     * Initialise this runner with the evaluator to be used.
-     * @param evaluatorClass The Evaluator to be used on this runner.
-     * @param link The underlying communication link.
-     * @returns The initialised `runnerPlugin` and `conduit`.
-     */
-    function initialise(evaluatorClass, link = self) {
-        const conduit = new Conduit(link, false);
-        const runnerPlugin = conduit.registerPlugin(RunnerPlugin, evaluatorClass);
-        return { runnerPlugin, conduit };
-    }
-
-    class Context {
-        //public nodes: ;
-        constructor(program, context) {
-            //public environment: Environment;
-            this.errors = [];
-            this.createGlobalEnvironment = () => ({
-                tail: null,
-                name: 'global',
-                head: {},
-                heap: new Heap(),
-                id: '-1'
-            });
-            this.createEmptyRuntime = () => ({
-                break: false,
-                debuggerOn: true,
-                isRunning: false,
-                environmentTree: new EnvTree(),
-                environments: [],
-                value: undefined,
-                nodes: [],
-                control: null,
-                stash: null,
-                objectCount: 0,
-                envSteps: -1,
-                envStepsTotal: 0,
-                breakpointSteps: [],
-                changepointSteps: []
-            });
-            this.control = new Control(program);
-            this.stash = new Stash();
-            this.runtime = this.createEmptyRuntime();
-            //this.environment = createProgramEnvironment(context || this, false);
-            if (this.runtime.environments.length === 0) {
-                const globalEnvironment = this.createGlobalEnvironment();
-                this.runtime.environments.push(globalEnvironment);
-                this.runtime.environmentTree.insert(globalEnvironment);
-            }
-        }
-        reset(program) {
-            this.control = new Control(program);
-            this.stash = new Stash();
-            //this.environment = createProgramEnvironment(this, false);
-            this.errors = [];
-        }
-        copy() {
-            const newContext = new Context();
-            newContext.control = this.control.copy();
-            newContext.stash = this.stash.copy();
-            //newContext.environments = this.copyEnvironment(this.environments);
-            return newContext;
-        }
-        copyEnvironment(env) {
-            const newTail = env.tail ? this.copyEnvironment(env.tail) : null;
-            const newEnv = {
-                id: env.id,
-                name: env.name,
-                tail: newTail,
-                head: Object.assign({}, env.head),
-                heap: new Heap(),
-                callExpression: env.callExpression,
-                thisContext: env.thisContext
-            };
-            return newEnv;
-        }
-    }
-    class EnvTree {
-        constructor() {
-            this._root = null;
-            this.map = new Map();
-        }
-        get root() {
-            return this._root;
-        }
-        insert(environment) {
-            const tailEnvironment = environment.tail;
-            if (tailEnvironment === null) {
-                if (this._root === null) {
-                    this._root = new EnvTreeNode(environment, null);
-                    this.map.set(environment, this._root);
-                }
-            }
-            else {
-                const parentNode = this.map.get(tailEnvironment);
-                if (parentNode) {
-                    const childNode = new EnvTreeNode(environment, parentNode);
-                    parentNode.addChild(childNode);
-                    this.map.set(environment, childNode);
-                }
-            }
-        }
-        getTreeNode(environment) {
-            return this.map.get(environment);
-        }
-    }
-    class EnvTreeNode {
-        constructor(environment, parent) {
-            this.environment = environment;
-            this.parent = parent;
-            this._children = [];
-        }
-        get children() {
-            return this._children;
-        }
-        resetChildren(newChildren) {
-            this.clearChildren();
-            this.addChildren(newChildren);
-            newChildren.forEach(c => (c.parent = this));
-        }
-        clearChildren() {
-            this._children = [];
-        }
-        addChildren(newChildren) {
-            this._children.push(...newChildren);
-        }
-        addChild(newChild) {
-            this._children.push(newChild);
-            return newChild;
-        }
-    }
-
-    const defaultContext = new Context();
-    const defaultOptions = {
-        isPrelude: false,
-        envSteps: 100000,
-        stepLimit: 100000
-    };
-    class PyEvaluator extends BasicEvaluator {
-        constructor(conductor) {
-            super(conductor);
-            this.context = defaultContext;
-            this.options = defaultOptions;
-        }
-        evaluateChunk(chunk) {
-            return __awaiter(this, void 0, void 0, function* () {
-                try {
-                    const result = yield runInContext(chunk, // Code
-                    this.context, this.options);
-                    this.conductor.sendOutput(`Result: ${result.representation.toString(result.value)}`);
-                    //this.conductor.sendOutput(`Result: 6`);
-                }
-                catch (error) {
-                    this.conductor.sendOutput(`Error: ${error instanceof Error ? error.message : error}`);
-                }
-            });
-        }
-    }
-    // runInContext
-    // IOptions
-    // Context
-    // BasicEvaluator;
-    // IRunnerPlugin
-
     /* Use as a command line script */
     /* npm run start:dev -- test.py */
     /* npm run start:dev -- test.py tsc --maxErrors 1 */
@@ -26543,13 +25903,52 @@
             return result;
         });
     }
-    // local test only
+    //local test only
     // const context = new Context();
     // const options: IOptions = {
     //     isPrelude: false,
     //     envSteps: 100000,
     //     stepLimit: 100000
     // };
+    // import { promises as fs1 } from 'fs';
+    // import * as os from 'os';
+    // async function loadModulesFromServer(context: Context, baseURL: string): Promise<void> {
+    //     // 先获取 modules.json 文件
+    //     const modulesJsonUrl = `${baseURL}/modules.json`;
+    //     const response = await fetch(modulesJsonUrl);
+    //     if (!response.ok) {
+    //       throw new Error(`Failed to load modules.json from ${modulesJsonUrl}`);
+    //     }
+    //     const modulesData: Record<string, any> = await response.json();
+    //     // modulesData 假定格式为 { moduleName1: {...}, moduleName2: {...}, ... }
+    //     // 遍历每个模块名，加载对应模块
+    //     for (const moduleName in modulesData) {
+    //       // 构造模块文件的 URL，假设文件名与模块名相同，并以 .js 结尾
+    //       const moduleUrl = `${baseURL}/bundles/${moduleName}.js`;
+    //       const moduleResponse = await fetch(moduleUrl);
+    //       if (!moduleResponse.ok) {
+    //         console.warn(`Failed to load module ${moduleName} from ${moduleUrl}`);
+    //         continue;
+    //       }
+    //       const moduleSource = await moduleResponse.text();
+    //       // 评估模块文件，获取其导出对象
+    //       // 注意：这里使用 eval 仅作为示例，实际项目中应考虑安全和沙箱策略
+    //     //   let moduleExports;
+    //     //   try {
+    //     //     moduleExports = eval(moduleSource);
+    //     //   } catch (e) {
+    //     //     console.error(`Error evaluating module ${moduleName}:`, e);
+    //     //     continue;
+    //     //   }
+    //     const tmpFile = path.join(os.tmpdir(), path.basename(moduleUrl));
+    //         fs1.writeFile(tmpFile, moduleSource);
+    //         // 动态 import 使用 file:// 协议
+    //         const moduleExports =  await import('file://' + tmpFile);
+    //       // 将模块导出对象存入 nativeStorage.loadedModules
+    //       context.nativeStorage.loadedModules[moduleName] = moduleExports;
+    //     }
+    //     console.info(context.nativeStorage);
+    // }
     // const BaseParserError = ParserErrors.BaseParserError;
     // const BaseTokenizerError = TokenizerErrors.BaseTokenizerError;
     // const BaseResolverError = ResolverErrors.BaseResolverError;
@@ -26582,6 +25981,7 @@
     //       }
     //       const filePath = process.argv[2];
     //       try {
+    //         //await loadModulesFromServer(context, "http://localhost:8022");
     //         const code = fs.readFileSync(filePath, "utf8") + "\n";
     //         console.log(`Parsing Python file: ${filePath}`);
     //         const result = await runInContext(code, context, options);
@@ -26593,10 +25993,7 @@
     //       }
     //     })();
     // }
-    //conductor/runner/types/IEvaluator
-    //conductor/runner/BasicEvaluator
-    //conductor/runner/util/initialise
-    initialise(PyEvaluator);
+    //const {runnerPlugin, conduit} = initialise(PyEvaluator);
 
     exports.parsePythonToEstreeAst = parsePythonToEstreeAst;
     exports.runInContext = runInContext;

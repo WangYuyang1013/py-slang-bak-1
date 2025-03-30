@@ -33,3 +33,13 @@ export declare const isSimpleFunction: (node: any) => boolean;
 export declare const reduceConditional: (node: es.IfStatement | es.ConditionalExpression) => ControlItem[];
 export declare const handleRuntimeError: (context: Context, error: RuntimeSourceError) => never;
 export declare function pythonMod(a: any, b: any): any;
+export declare function hasImportDeclarations(node: es.BlockStatement): boolean;
+export declare const isImportDeclaration: (node: es.Program["body"][number]) => node is es.ImportDeclaration;
+export declare function getModuleDeclarationSource(node: Exclude<es.ModuleDeclaration, es.ExportDefaultDeclaration>): string;
+export declare class AssertionError extends RuntimeSourceError {
+    readonly message: string;
+    constructor(message: string);
+    explain(): string;
+    elaborate(): string;
+}
+export default function assert(condition: boolean, message: string): asserts condition;

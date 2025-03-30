@@ -13,7 +13,7 @@ import { Stash, Value } from './stash';
 import { Environment, createBlockEnvironment, createEnvironment, createProgramEnvironment, currentEnvironment, popEnvironment, pushEnvironment } from './environment';
 import { Context } from './context';
 import { isNode, isBlockStatement, hasDeclarations, statementSequence, blockArrowFunction, constantDeclaration, pyVariableDeclaration, identifier, literal } from './ast-helper';
-import { envChanging,declareFunctionsAndVariables, handleSequence, defineVariable, getVariable, checkStackOverFlow, checkNumberOfArguments, isInstr, isSimpleFunction, isIdentifier, reduceConditional, valueProducing, handleRuntimeError } from './utils';
+import { envChanging,declareFunctionsAndVariables, handleSequence, defineVariable, getVariable, checkStackOverFlow, checkNumberOfArguments, isInstr, isSimpleFunction, isIdentifier, reduceConditional, valueProducing, handleRuntimeError, hasImportDeclarations, declareIdentifier } from './utils';
 import { AppInstr, AssmtInstr, BinOpInstr, BranchInstr, EnvInstr, Instr, InstrType, StatementSequence, UnOpInstr } from './types';
 import * as instr from './instrCreator'
 import { Closure } from './closure';
@@ -24,6 +24,9 @@ import { ComplexLiteral, CSEBreak, None, PyComplexNumber, RecursivePartial, Repr
 import { builtIns, builtInConstants } from '../stdlib';
 import { IOptions } from '..';
 import { CseError } from './error';
+import { filterImportDeclarations } from './dict';
+import { RuntimeSourceError } from '../errors/runtimeSourceError';
+import { Identifier } from '../conductor/types';
 
 type CmdEvaluator = (
   command: ControlItem,
@@ -90,6 +93,47 @@ export function evaluate(program: es.Program, context: Context, options: Recursi
     return { type: 'error', message: error.message };
   } finally {
     context.runtime.isRunning = false
+  }
+}
+
+function evaluateImports(program: es.Program, context: Context) {
+  try {
+    console.info('evaluete imports');
+    const [importNodeMap] = filterImportDeclarations(program)
+    const environment = currentEnvironment(context)
+    for (const [moduleName, nodes] of importNodeMap) {
+      const functions = context.nativeStorage.loadedModules[moduleName]
+      for (const node of nodes) {
+        for (const spec of node.specifiers) {
+          declareIdentifier(context, spec.local.name, node, environment)
+          let obj: any
+
+          switch (spec.type) {
+            case 'ImportSpecifier': {
+              if (spec.imported.type === 'Identifier') {
+                obj = functions[spec.imported.name];
+              } else {
+                throw new Error(`Unexpected literal import: ${spec.imported.value}`);
+              }
+              //obj = functions[(spec.imported).name]
+              break
+            }
+            case 'ImportDefaultSpecifier': {
+              obj = functions.default
+              break
+            }
+            case 'ImportNamespaceSpecifier': {
+              obj = functions
+              break
+            }
+          }
+
+          defineVariable(context, spec.local.name, obj, true, node)
+        }
+      }
+    }
+  } catch (error) {
+    handleRuntimeError(context, error as RuntimeSourceError)
   }
 }
 
@@ -164,8 +208,8 @@ export function* generateCSEMachineStateStream(
 
   while (command) {
     // For local debug only
-    // console.info('next command to be evaluated');
-    // console.info(command);
+    console.info('next command to be evaluated');
+    console.info(command);
 
     // Return to capture a snapshot of the control and stash after the target step count is reached
     if (!isPrelude && steps === envSteps) {
@@ -269,12 +313,13 @@ const cmdEvaluators: { [type: string]: CmdEvaluator } = {
       popEnvironment(context)
     }
 
-    if (hasDeclarations(command as es.BlockStatement)) {
+    if (hasDeclarations(command as es.BlockStatement) || hasImportDeclarations(command as es.BlockStatement)) {
       if (currentEnvironment(context).name != 'programEnvironment') {
         const programEnv = createProgramEnvironment(context, isPrelude)
         pushEnvironment(context, programEnv)
       }
       const environment = currentEnvironment(context)
+      evaluateImports(command as unknown as es.Program, context)
       declareFunctionsAndVariables(context, command as es.BlockStatement, environment)
     }
 
@@ -516,9 +561,7 @@ const cmdEvaluators: { [type: string]: CmdEvaluator } = {
   //   control.push(instr.breakInstr(command));
   // },
 
-  // ImportDeclaration: function () {
-  //   
-  // },
+  ImportDeclaration: function () {},
 
   /**
    * Expressions

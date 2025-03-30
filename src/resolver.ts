@@ -6,6 +6,7 @@ import { TokenType } from "./tokens";
 import { ResolverErrors } from "./errors";
 
 import levenshtein from 'fast-levenshtein';
+// const levenshtein = require('fast-levenshtein');
 
 const RedefineableTokenSentinel = new Token(TokenType.AT, "", 0, 0, 0);
 

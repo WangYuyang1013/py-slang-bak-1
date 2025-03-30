@@ -532,3 +532,46 @@ export function pythonMod(a: any, b: any): any {
     return mod + b;
   }
 }
+
+export function hasImportDeclarations(node: es.BlockStatement): boolean {
+  for (const statement of (node as unknown as es.Program).body) {
+    if (statement.type === 'ImportDeclaration') {
+      return true
+    }
+  }
+  return false
+}
+
+export const isImportDeclaration = (
+  node: es.Program['body'][number]
+): node is es.ImportDeclaration => node.type === 'ImportDeclaration'
+
+export function getModuleDeclarationSource(
+  node: Exclude<es.ModuleDeclaration, es.ExportDefaultDeclaration>
+): string {
+  assert(
+    typeof node.source?.value === 'string',
+    `Expected ${node.type} to have a source value of type string, got ${node.source?.value}`
+  )
+  return node.source.value
+}
+
+export class AssertionError extends RuntimeSourceError {
+  constructor(public readonly message: string) {
+    super()
+  }
+
+  public explain(): string {
+    return this.message
+  }
+
+  public elaborate(): string {
+    return 'Please contact the administrators to let them know that this error has occurred'
+  }
+}
+
+export default function assert(condition: boolean, message: string): asserts condition {
+  if (!condition) {
+    throw new AssertionError(message)
+  }
+}
