@@ -741,13 +741,6 @@
     "@types/linkify-it" "^5"
     "@types/mdurl" "^2"
 
-"@types/mathjs@^9.4.1":
-  version "9.4.1"
-  resolved "https://registry.npmjs.org/@types/mathjs/-/mathjs-9.4.1.tgz"
-  integrity sha512-pEvgJ9c0LkVSZODbBuxeFngyhg/xMpZElcmvtFLayUXEgt6I4fGcMaxlPspV4kIMucmY6W4YwmtaWyTAQpqsrQ==
-  dependencies:
-    mathjs "*"
-
 "@types/mdurl@^2":
   version "2.0.0"
   resolved "https://registry.npmjs.org/@types/mdurl/-/mdurl-2.0.0.tgz"
@@ -1347,11 +1340,6 @@ fs.realpath@^1.0.0:
   version "1.0.0"
   resolved "https://registry.npmjs.org/fs.realpath/-/fs.realpath-1.0.0.tgz"
   integrity sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw==
-
-fsevents@^2.3.2, fsevents@~2.3.2:
-  version "2.3.3"
-  resolved "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz"
-  integrity sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==
 
 function-bind@^1.1.2:
   version "1.1.2"
@@ -2159,7 +2147,7 @@ marked@^4.0.10:
   resolved "https://registry.npmjs.org/marked/-/marked-4.3.0.tgz"
   integrity sha512-PRsaiG84bK+AMvxziE/lCFss8juXjNaWzVbN5tXAm4XjeaS9NAHhop+PjQxz2A9h8Q4M/xGmzP8vqNwy6JeK0A==
 
-mathjs@*, mathjs@14.4.0:
+mathjs@^14.4.0:
   version "14.4.0"
   resolved "https://registry.npmjs.org/mathjs/-/mathjs-14.4.0.tgz"
   integrity sha512-CpoYDhNENefjIG9wU9epr+0pBHzlaySfpWcblZdAf5qXik/j/U8eSmx/oNbmXO0F5PyfwPGVD/wK4VWsTho1SA==
