@@ -741,13 +741,6 @@
     "@types/linkify-it" "^5"
     "@types/mdurl" "^2"
 
-"@types/mathjs@^9.4.2":
-  version "9.4.2"
-  resolved "https://registry.npmjs.org/@types/mathjs/-/mathjs-9.4.2.tgz"
-  integrity sha512-GF5g1vJmvKdWIWsE53XX7EDAyCaZ9p6gaYm1xhlXn5JjrY/NJrOfJN3fBxS3wyZpVh3QqKoMkS2WjFwxWMHOTw==
-  dependencies:
-    mathjs "*"
-
 "@types/mdurl@^2":
   version "2.0.0"
   resolved "https://registry.npmjs.org/@types/mdurl/-/mdurl-2.0.0.tgz"
@@ -2154,7 +2147,7 @@ marked@^4.0.10:
   resolved "https://registry.npmjs.org/marked/-/marked-4.3.0.tgz"
   integrity sha512-PRsaiG84bK+AMvxziE/lCFss8juXjNaWzVbN5tXAm4XjeaS9NAHhop+PjQxz2A9h8Q4M/xGmzP8vqNwy6JeK0A==
 
-mathjs@*:
+mathjs@14.4.0:
   version "14.4.0"
   resolved "https://registry.npmjs.org/mathjs/-/mathjs-14.4.0.tgz"
   integrity sha512-CpoYDhNENefjIG9wU9epr+0pBHzlaySfpWcblZdAf5qXik/j/U8eSmx/oNbmXO0F5PyfwPGVD/wK4VWsTho1SA==
