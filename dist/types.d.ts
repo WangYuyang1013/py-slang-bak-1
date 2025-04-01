@@ -76,8 +76,9 @@ export interface Finished {
 }
 export declare class Representation {
     representation: string;
+    private result;
     constructor(representation: string);
-    toString(value: any): string;
+    toString(): string;
 }
 export interface NativeStorage {
     builtins: Map<string, Value>;

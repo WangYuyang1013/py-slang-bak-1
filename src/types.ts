@@ -289,13 +289,16 @@ export interface Finished {
 // }
 
 export class Representation {
-    constructor(public representation: string) {}
+    private result: string;
+    constructor(public representation: string) {
+        this.result = representation;
+    }
   
-    toString(value: any): string {
+    toString(): string {
         // call str(value) in stdlib
         // TODO: mapping
-        const result = toPythonString(value);
-        return result;
+        // const result = toPythonString(value);
+        return this.result;
     }
 }
 

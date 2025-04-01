@@ -29,7 +29,7 @@ export class PyEvaluator extends BasicEvaluator {
                 this.context,
                 this.options
             );
-            this.conductor.sendOutput(`${(result as Finished).representation.toString((result as Finished).value)}`);
+            this.conductor.sendOutput(`${(result as Finished).representation.toString()}`);
         } catch (error) {
             this.conductor.sendOutput(`Error: ${error instanceof Error ? error.message : error}`);
         }

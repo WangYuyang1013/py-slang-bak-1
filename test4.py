@@ -26,6 +26,8 @@
 from clone import nbody
 x = 1
 x
+import math
+
 # x = 3.14
 # i = 10
 # print(math.log1p(0))

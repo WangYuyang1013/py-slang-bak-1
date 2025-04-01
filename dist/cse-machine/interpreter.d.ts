@@ -9,6 +9,7 @@ import { Stash, Value } from './stash';
 import { Context } from './context';
 import { RecursivePartial, Result } from '../types';
 import { IOptions } from '..';
+export declare function addPrint(str: string): void;
 /**
  * Function that returns the appropriate Promise<Result> given the output of CSE machine evaluating, depending
  * on whether the program is finished evaluating, ran into a breakpoint or ran into an error.

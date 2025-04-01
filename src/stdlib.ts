@@ -3,6 +3,7 @@ import { Closure } from "./cse-machine/closure";
 import { Value } from "./cse-machine/stash";
 // npm install mathjs
 import { gamma, lgamma, erf } from 'mathjs';
+import { addPrint } from "./cse-machine/interpreter";
 
 /*
     Create a map to hold built-in constants.
@@ -1756,13 +1757,14 @@ export function input(args: Value[]): Value {
     // distinguish between browser and commandline
 }
 
-export function print(args: Value[]): Value {
+export function print(args: Value[]) {
     // Convert each argument using toPythonString (an assumed helper function).
     const pieces = args.map(arg => toPythonString(arg));
     // Join them with spaces.
     const output = pieces.join(' ');
     // Actually print to console (you can replace this with any desired output).
     // console.info(output);
-    return { type: 'string', value: output };
+    addPrint(output);
+    //return { type: 'string', value: output };
 }
   

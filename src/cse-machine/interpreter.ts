@@ -36,6 +36,11 @@ type CmdEvaluator = (
   isPrelude: boolean
 ) => void
 
+let cseFinalPrint = "";
+export function addPrint(str: string) {
+  cseFinalPrint = cseFinalPrint + str + "\n";
+}
+
 /**
  * Function that returns the appropriate Promise<Result> given the output of CSE machine evaluating, depending
  * on whether the program is finished evaluating, ran into a breakpoint or ran into an error.
@@ -50,6 +55,7 @@ export function CSEResultPromise(context: Context, value: Value): Promise<Result
     } else if (value instanceof CseError) {
       resolve({ status: 'error' } as unknown as Result );
     } else {
+      const rep = { type: "string", value: cseFinalPrint };
       const representation = new Representation(value);
       resolve({ status: 'finished', context, value, representation })
     }
