@@ -55,8 +55,8 @@ export function CSEResultPromise(context: Context, value: Value): Promise<Result
     } else if (value instanceof CseError) {
       resolve({ status: 'error' } as unknown as Result );
     } else {
-      // const rep = { type: "string", value: cseFinalPrint };
-      const representation = new Representation(cseFinalPrint);
+      //const rep: Value = { type: "string", value: cseFinalPrint };
+      const representation = new Representation(value);
       resolve({ status: 'finished', context, value, representation })
     }
   })
@@ -86,7 +86,8 @@ export function evaluate(program: es.Program, context: Context, options: Recursi
     context.runtime.isRunning = true
     context.control = new Control(program);
     context.stash = new Stash();
-    return runCSEMachine(
+    // Adaptation for new feature
+    const result = runCSEMachine(
       context,
       context.control,
       context.stash,
@@ -94,6 +95,8 @@ export function evaluate(program: es.Program, context: Context, options: Recursi
       options.stepLimit!,
       options.isPrelude
     );
+    const rep: Value = { type: "string", value: cseFinalPrint };
+    return rep;
   } catch (error: any) {
     context.errors.push(new CseError(error.message));
     return { type: 'error', message: error.message };

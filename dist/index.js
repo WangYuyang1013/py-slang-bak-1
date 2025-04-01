@@ -1235,3653 +1235,6 @@
         }
     }
 
-    class CSEBreak {
-    }
-    // export class CseError {
-    //     constructor(public readonly error: any) {}
-    // }
-    var ErrorType;
-    (function (ErrorType) {
-        ErrorType["IMPORT"] = "Import";
-        ErrorType["RUNTIME"] = "Runtime";
-        ErrorType["SYNTAX"] = "Syntax";
-        ErrorType["TYPE"] = "Type";
-    })(ErrorType || (ErrorType = {}));
-    var ErrorSeverity;
-    (function (ErrorSeverity) {
-        ErrorSeverity["WARNING"] = "Warning";
-        ErrorSeverity["ERROR"] = "Error";
-    })(ErrorSeverity || (ErrorSeverity = {}));
-    class PyComplexNumber {
-        constructor(real, imag) {
-            this.real = real;
-            this.imag = imag;
-        }
-        static fromNumber(value) {
-            return new PyComplexNumber(value, 0);
-        }
-        static fromBigInt(value) {
-            return new PyComplexNumber(Number(value), 0);
-        }
-        static fromString(str) {
-            if (!/[jJ]/.test(str)) {
-                const realVal = Number(str);
-                if (isNaN(realVal)) {
-                    throw new Error(`Invalid complex string: ${str}`);
-                }
-                return new PyComplexNumber(realVal, 0);
-            }
-            const lower = str.toLowerCase();
-            if (lower.endsWith('j')) {
-                const numericPart = str.substring(0, str.length - 1);
-                if (numericPart === '' || numericPart === '+' || numericPart === '-') {
-                    const sign = (numericPart === '-') ? -1 : 1;
-                    return new PyComplexNumber(0, sign * 1);
-                }
-                const imagVal = Number(numericPart);
-                if (isNaN(imagVal)) {
-                    throw new Error(`Invalid complex string: ${str}`);
-                }
-                return new PyComplexNumber(0, imagVal);
-            }
-            const match = str.match(/^([\+\-]?\d+(\.\d+)?([eE][+\-]?\d+)?)([\+\-]\d+(\.\d+)?([eE][+\-]?\d+)?)?[jJ]?$/);
-            if (!match) {
-                throw new Error(`Invalid complex string: ${str}`);
-            }
-            const realPart = Number(match[1]);
-            let imagPart = 0;
-            if (match[4]) {
-                imagPart = Number(match[4]);
-            }
-            return new PyComplexNumber(realPart, imagPart);
-        }
-        static fromValue(value) {
-            if (value instanceof PyComplexNumber) {
-                return new PyComplexNumber(value.real, value.imag);
-            }
-            if (typeof value === "number") {
-                return PyComplexNumber.fromNumber(value);
-            }
-            if (typeof value === "bigint") {
-                return PyComplexNumber.fromBigInt(value);
-            }
-            return PyComplexNumber.fromString(value);
-        }
-        /**
-         * operations
-         */
-        add(other) {
-            return new PyComplexNumber(this.real + other.real, this.imag + other.imag);
-        }
-        sub(other) {
-            return new PyComplexNumber(this.real - other.real, this.imag - other.imag);
-        }
-        mul(other) {
-            // (a+bi)*(c+di) = (ac - bd) + (bc + ad)i
-            const realPart = this.real * other.real - this.imag * other.imag;
-            const imagPart = this.real * other.imag + this.imag * other.real;
-            return new PyComplexNumber(realPart, imagPart);
-        }
-        // https://github.com/python/cpython/blob/main/Objects/complexobject.c#L986
-        // In the CPython source code, a branch algorithm is used for complex division.
-        // It first compares the magnitudes of the dividend and divisor, and if some components are too large or too small, 
-        // appropriate scaling is applied before performing the operation. 
-        // This approach can significantly reduce overflow or underflow, thereby ensuring that the results remain more consistent with Python.
-        div(other) {
-            // (a+bi)/(c+di) = ((a+bi)*(c-di)) / (c^2 + d^2)
-            const denominator = other.real * other.real + other.imag * other.imag;
-            if (denominator === 0) {
-                throw new Error(`Division by zero in complex number.`);
-            }
-            const a = this.real;
-            const b = this.imag;
-            const c = other.real;
-            const d = other.imag;
-            const absC = Math.abs(c);
-            const absD = Math.abs(d);
-            let real;
-            let imag;
-            if (absD < absC) {
-                const ratio = d / c;
-                const denom = c + d * ratio; // c + d*(d/c) = c + d^2/c
-                real = (a + b * ratio) / denom;
-                imag = (b - a * ratio) / denom;
-            }
-            else {
-                const ratio = c / d;
-                const denom = d + c * ratio; // d + c*(c/d) = d + c^2/d
-                real = (a * ratio + b) / denom;
-                imag = (b * ratio - a) / denom;
-            }
-            return new PyComplexNumber(real, imag);
-            //const numerator = this.mul(new PyComplexNumber(other.real, -other.imag));
-            //return new PyComplexNumber(numerator.real / denominator, numerator.imag / denominator);
-        }
-        pow(other) {
-            // z = this (a+bi), w = other (A+Bi)
-            const a = this.real;
-            const b = this.imag;
-            const A = other.real;
-            const B = other.imag;
-            const r = Math.sqrt(a * a + b * b);
-            const theta = Math.atan2(b, a);
-            if (r === 0) {
-                // In Python, raising 0 to a negative or complex power raises an error.
-                // For example, 0**(1j) in CPython directly raises ValueError: complex power.
-                if (A < 0 || B !== 0) {
-                    throw new Error('0 cannot be raised to a negative or complex power');
-                }
-                // Otherwise, 0**(positive number) = 0.
-                return new PyComplexNumber(0, 0);
-            }
-            const logR = Math.log(r);
-            // realExpPart = A*ln(r) - B*theta
-            // imagExpPart = B*ln(r) + A*theta
-            const realExpPart = A * logR - B * theta;
-            const imagExpPart = B * logR + A * theta;
-            // e^(x + i y) = e^x [cos(y) + i sin(y)]
-            const expOfReal = Math.exp(realExpPart);
-            const c = expOfReal * Math.cos(imagExpPart);
-            const d = expOfReal * Math.sin(imagExpPart);
-            return new PyComplexNumber(c, d);
-        }
-        toString() {
-            if (this.real === 0) {
-                return `${this.imag}j`;
-            }
-            // if (this.imag === 0) {
-            //     return `${this.real}`;
-            // }
-            const sign = (this.imag >= 0) ? "+" : "";
-            // return `(${this.real}${sign}${this.imag}j)`;
-            return `(${this.toPythonComplexFloat(this.real)}${sign}${this.toPythonComplexFloat(this.imag)}j)`;
-        }
-        toPythonComplexFloat(num) {
-            if (num === Infinity) {
-                return "inf";
-            }
-            if (num === -Infinity) {
-                return "-inf";
-            }
-            if (Math.abs(num) >= 1e16 || (num !== 0 && Math.abs(num) < 1e-4)) {
-                return num.toExponential().replace(/e([+-])(\d)$/, 'e$10$2');
-            }
-            return num.toString();
-        }
-        equals(other) {
-            return (Number(this.real) === Number(other.real) && Number(this.imag) === Number(other.imag));
-        }
-    }
-    // export class Representation {
-    //     constructor(public representation: string) {}
-    //     toString() {
-    //         return this.representation
-    //     }
-    // }
-    class Representation {
-        constructor(representation) {
-            this.representation = representation;
-            this.result = representation;
-        }
-        toString() {
-            // call str(value) in stdlib
-            // TODO: mapping
-            // const result = toPythonString(value);
-            return this.result;
-        }
-    }
-
-    var ExprNS;
-    (function (ExprNS) {
-        class Expr {
-            constructor(startToken, endToken) {
-                this.startToken = startToken;
-                this.endToken = endToken;
-            }
-        }
-        ExprNS.Expr = Expr;
-        class None extends Expr {
-            constructor(startToken, endToken, value = "None") {
-                super(startToken, endToken);
-            }
-            accept(visitor) {
-                return visitor.visitNoneExpr(this);
-            }
-        }
-        ExprNS.None = None;
-        class BigIntLiteral extends Expr {
-            constructor(startToken, endToken, value) {
-                super(startToken, endToken);
-                this.value = value;
-            }
-            accept(visitor) {
-                return visitor.visitBigIntLiteralExpr(this);
-            }
-        }
-        ExprNS.BigIntLiteral = BigIntLiteral;
-        class Complex extends Expr {
-            constructor(startToken, endToken, value) {
-                super(startToken, endToken);
-                this.value = PyComplexNumber.fromString(value);
-            }
-            accept(visitor) {
-                return visitor.visitComplexExpr(this);
-            }
-        }
-        ExprNS.Complex = Complex;
-        class Binary extends Expr {
-            constructor(startToken, endToken, left, operator, right) {
-                super(startToken, endToken);
-                this.left = left;
-                this.operator = operator;
-                this.right = right;
-            }
-            accept(visitor) {
-                return visitor.visitBinaryExpr(this);
-            }
-        }
-        ExprNS.Binary = Binary;
-        class Compare extends Expr {
-            constructor(startToken, endToken, left, operator, right) {
-                super(startToken, endToken);
-                this.left = left;
-                this.operator = operator;
-                this.right = right;
-            }
-            accept(visitor) {
-                return visitor.visitCompareExpr(this);
-            }
-        }
-        ExprNS.Compare = Compare;
-        class BoolOp extends Expr {
-            constructor(startToken, endToken, left, operator, right) {
-                super(startToken, endToken);
-                this.left = left;
-                this.operator = operator;
-                this.right = right;
-            }
-            accept(visitor) {
-                return visitor.visitBoolOpExpr(this);
-            }
-        }
-        ExprNS.BoolOp = BoolOp;
-        class Grouping extends Expr {
-            constructor(startToken, endToken, expression) {
-                super(startToken, endToken);
-                this.expression = expression;
-            }
-            accept(visitor) {
-                return visitor.visitGroupingExpr(this);
-            }
-        }
-        ExprNS.Grouping = Grouping;
-        class Literal extends Expr {
-            constructor(startToken, endToken, value) {
-                super(startToken, endToken);
-                this.value = value;
-            }
-            accept(visitor) {
-                return visitor.visitLiteralExpr(this);
-            }
-        }
-        ExprNS.Literal = Literal;
-        class Unary extends Expr {
-            constructor(startToken, endToken, operator, right) {
-                super(startToken, endToken);
-                this.operator = operator;
-                this.right = right;
-            }
-            accept(visitor) {
-                return visitor.visitUnaryExpr(this);
-            }
-        }
-        ExprNS.Unary = Unary;
-        class Ternary extends Expr {
-            constructor(startToken, endToken, predicate, consequent, alternative) {
-                super(startToken, endToken);
-                this.predicate = predicate;
-                this.consequent = consequent;
-                this.alternative = alternative;
-            }
-            accept(visitor) {
-                return visitor.visitTernaryExpr(this);
-            }
-        }
-        ExprNS.Ternary = Ternary;
-        class Lambda extends Expr {
-            constructor(startToken, endToken, parameters, body) {
-                super(startToken, endToken);
-                this.parameters = parameters;
-                this.body = body;
-            }
-            accept(visitor) {
-                return visitor.visitLambdaExpr(this);
-            }
-        }
-        ExprNS.Lambda = Lambda;
-        class MultiLambda extends Expr {
-            constructor(startToken, endToken, parameters, body, varDecls) {
-                super(startToken, endToken);
-                this.parameters = parameters;
-                this.body = body;
-                this.varDecls = varDecls;
-            }
-            accept(visitor) {
-                return visitor.visitMultiLambdaExpr(this);
-            }
-        }
-        ExprNS.MultiLambda = MultiLambda;
-        class Variable extends Expr {
-            constructor(startToken, endToken, name) {
-                super(startToken, endToken);
-                this.name = name;
-            }
-            accept(visitor) {
-                return visitor.visitVariableExpr(this);
-            }
-        }
-        ExprNS.Variable = Variable;
-        class Call extends Expr {
-            constructor(startToken, endToken, callee, args) {
-                super(startToken, endToken);
-                this.callee = callee;
-                this.args = args;
-            }
-            accept(visitor) {
-                return visitor.visitCallExpr(this);
-            }
-        }
-        ExprNS.Call = Call;
-    })(ExprNS || (ExprNS = {}));
-    var StmtNS;
-    (function (StmtNS) {
-        class Stmt {
-            constructor(startToken, endToken) {
-                this.startToken = startToken;
-                this.endToken = endToken;
-            }
-        }
-        StmtNS.Stmt = Stmt;
-        class Indent extends Stmt {
-            constructor(startToken, endToken) {
-                super(startToken, endToken);
-            }
-            accept(visitor) {
-                return visitor.visitIndentCreation(this);
-            }
-        }
-        StmtNS.Indent = Indent;
-        class Dedent extends Stmt {
-            constructor(startToken, endToken) {
-                super(startToken, endToken);
-            }
-            accept(visitor) {
-                return visitor.visitDedentCreation(this);
-            }
-        }
-        StmtNS.Dedent = Dedent;
-        class Pass extends Stmt {
-            constructor(startToken, endToken) {
-                super(startToken, endToken);
-            }
-            accept(visitor) {
-                return visitor.visitPassStmt(this);
-            }
-        }
-        StmtNS.Pass = Pass;
-        class Assign extends Stmt {
-            constructor(startToken, endToken, name, value) {
-                super(startToken, endToken);
-                this.name = name;
-                this.value = value;
-            }
-            accept(visitor) {
-                return visitor.visitAssignStmt(this);
-            }
-        }
-        StmtNS.Assign = Assign;
-        class AnnAssign extends Stmt {
-            constructor(startToken, endToken, name, value, ann) {
-                super(startToken, endToken);
-                this.name = name;
-                this.value = value;
-                this.ann = ann;
-            }
-            accept(visitor) {
-                return visitor.visitAnnAssignStmt(this);
-            }
-        }
-        StmtNS.AnnAssign = AnnAssign;
-        class Break extends Stmt {
-            constructor(startToken, endToken) {
-                super(startToken, endToken);
-            }
-            accept(visitor) {
-                return visitor.visitBreakStmt(this);
-            }
-        }
-        StmtNS.Break = Break;
-        class Continue extends Stmt {
-            constructor(startToken, endToken) {
-                super(startToken, endToken);
-            }
-            accept(visitor) {
-                return visitor.visitContinueStmt(this);
-            }
-        }
-        StmtNS.Continue = Continue;
-        class Return extends Stmt {
-            constructor(startToken, endToken, value) {
-                super(startToken, endToken);
-                this.value = value;
-            }
-            accept(visitor) {
-                return visitor.visitReturnStmt(this);
-            }
-        }
-        StmtNS.Return = Return;
-        class FromImport extends Stmt {
-            constructor(startToken, endToken, module, names) {
-                super(startToken, endToken);
-                this.module = module;
-                this.names = names;
-            }
-            accept(visitor) {
-                return visitor.visitFromImportStmt(this);
-            }
-        }
-        StmtNS.FromImport = FromImport;
-        class Global extends Stmt {
-            constructor(startToken, endToken, name) {
-                super(startToken, endToken);
-                this.name = name;
-            }
-            accept(visitor) {
-                return visitor.visitGlobalStmt(this);
-            }
-        }
-        StmtNS.Global = Global;
-        class NonLocal extends Stmt {
-            constructor(startToken, endToken, name) {
-                super(startToken, endToken);
-                this.name = name;
-            }
-            accept(visitor) {
-                return visitor.visitNonLocalStmt(this);
-            }
-        }
-        StmtNS.NonLocal = NonLocal;
-        class Assert extends Stmt {
-            constructor(startToken, endToken, value) {
-                super(startToken, endToken);
-                this.value = value;
-            }
-            accept(visitor) {
-                return visitor.visitAssertStmt(this);
-            }
-        }
-        StmtNS.Assert = Assert;
-        class If extends Stmt {
-            constructor(startToken, endToken, condition, body, elseBlock) {
-                super(startToken, endToken);
-                this.condition = condition;
-                this.body = body;
-                this.elseBlock = elseBlock;
-            }
-            accept(visitor) {
-                return visitor.visitIfStmt(this);
-            }
-        }
-        StmtNS.If = If;
-        class While extends Stmt {
-            constructor(startToken, endToken, condition, body) {
-                super(startToken, endToken);
-                this.condition = condition;
-                this.body = body;
-            }
-            accept(visitor) {
-                return visitor.visitWhileStmt(this);
-            }
-        }
-        StmtNS.While = While;
-        class For extends Stmt {
-            constructor(startToken, endToken, target, iter, body) {
-                super(startToken, endToken);
-                this.target = target;
-                this.iter = iter;
-                this.body = body;
-            }
-            accept(visitor) {
-                return visitor.visitForStmt(this);
-            }
-        }
-        StmtNS.For = For;
-        class FunctionDef extends Stmt {
-            constructor(startToken, endToken, name, parameters, body, varDecls) {
-                super(startToken, endToken);
-                this.name = name;
-                this.parameters = parameters;
-                this.body = body;
-                this.varDecls = varDecls;
-            }
-            accept(visitor) {
-                return visitor.visitFunctionDefStmt(this);
-            }
-        }
-        StmtNS.FunctionDef = FunctionDef;
-        class SimpleExpr extends Stmt {
-            constructor(startToken, endToken, expression) {
-                super(startToken, endToken);
-                this.expression = expression;
-            }
-            accept(visitor) {
-                return visitor.visitSimpleExprStmt(this);
-            }
-        }
-        StmtNS.SimpleExpr = SimpleExpr;
-        class FileInput extends Stmt {
-            constructor(startToken, endToken, statements, varDecls) {
-                super(startToken, endToken);
-                this.statements = statements;
-                this.varDecls = varDecls;
-            }
-            accept(visitor) {
-                return visitor.visitFileInputStmt(this);
-            }
-        }
-        StmtNS.FileInput = FileInput;
-    })(StmtNS || (StmtNS = {}));
-
-    /*
-    * Full disclosure: some of the functions and general layout of the file is
-    * from my own implementation of a parser
-    * in Rust.
-    * https://github.com/Fidget-Spinner/crafting_interpreters/blob/main/rust/src/parser.rs
-    *
-    * That is in turn an implementation of the book "Crafting Interpreters" by
-    * Robert Nystrom, which implements an interpreter in Java.
-    * https://craftinginterpreters.com/parsing-expressions.html.
-    * I've included the MIT license that code snippets from
-    * the book is licensed under down below. See
-    * https://github.com/munificent/craftinginterpreters/blob/master/LICENSE
-    *
-    *
-    * My changes:
-    *   - The book was written in Java. I have written this in TypeScript.
-    *   - My Rust implementation uses pattern matching, but the visitor pattern is
-    *     used here.
-    *   - Additionally, the production rules are completely different
-    *     from the book as a whole different language is being parsed.
-    *
-    *
-        Permission is hereby granted, free of charge, to any person obtaining a copy
-        of this software and associated documentation files (the "Software"), to
-        deal in the Software without restriction, including without limitation the
-        rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-        sell copies of the Software, and to permit persons to whom the Software is
-        furnished to do so, subject to the following conditions:
-
-        The above copyright notice and this permission notice shall be included in
-        all copies or substantial portions of the Software.
-
-        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-        FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-        IN THE SOFTWARE.
-    **/
-    const PSEUD_NAMES = [
-        TokenType.TRUE,
-        TokenType.FALSE,
-        TokenType.NONE,
-    ];
-    class Parser {
-        constructor(source, tokens) {
-            this.source = source;
-            this.tokens = tokens;
-            this.current = 0;
-        }
-        // Consumes tokens while tokenTypes matches.
-        match(...tokenTypes) {
-            for (const tokenType of tokenTypes) {
-                if (this.check(tokenType)) {
-                    this.advance();
-                    return true;
-                }
-            }
-            return false;
-        }
-        check(...type) {
-            if (this.isAtEnd()) {
-                return false;
-            }
-            for (const tokenType of type) {
-                if (this.peek().type === tokenType) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        advance() {
-            if (!this.isAtEnd()) {
-                this.current += 1;
-            }
-            return this.previous();
-        }
-        isAtEnd() {
-            return this.peek().type === TokenType.ENDMARKER;
-        }
-        peek() {
-            return this.tokens[this.current];
-        }
-        previous() {
-            return this.tokens[this.current - 1];
-        }
-        consume(type, message) {
-            if (this.check(type))
-                return this.advance();
-            const token = this.tokens[this.current];
-            throw new exports.ParserErrors.ExpectedTokenError(this.source, token, message);
-        }
-        synchronize() {
-            this.advance();
-            while (!this.isAtEnd()) {
-                if (this.match(TokenType.NEWLINE)) {
-                    return false;
-                }
-                if (this.match(TokenType.FOR, TokenType.WHILE, TokenType.DEF, TokenType.IF, TokenType.ELIF, TokenType.ELSE, TokenType.RETURN)) {
-                    return true;
-                }
-                this.advance();
-            }
-            return false;
-        }
-        parse() {
-            return this.file_input();
-            // return this.expression();
-        }
-        //// THE NAMES OF THE FOLLOWING FUNCTIONS FOLLOW THE PRODUCTION RULES IN THE GRAMMAR.
-        //// HENCE THEIR NAMES MIGHT NOT BE COMPLIANT WITH CAMELCASE
-        file_input() {
-            const startToken = this.peek();
-            const statements = [];
-            while (!this.isAtEnd()) {
-                if (this.match(TokenType.NEWLINE) || this.match(TokenType.DEDENT)) {
-                    continue;
-                }
-                statements.push(this.stmt());
-            }
-            const endToken = this.peek();
-            return new StmtNS.FileInput(startToken, endToken, statements, []);
-        }
-        stmt() {
-            if (this.check(TokenType.DEF, TokenType.FOR, TokenType.IF, TokenType.WHILE)) {
-                return this.compound_stmt();
-            }
-            else if (this.check(TokenType.NAME, ...PSEUD_NAMES, TokenType.NUMBER, TokenType.PASS, TokenType.BREAK, TokenType.CONTINUE, TokenType.MINUS, TokenType.PLUS, TokenType.INDENT, TokenType.DEDENT, TokenType.RETURN, TokenType.FROM, TokenType.GLOBAL, TokenType.NONLOCAL, TokenType.ASSERT, TokenType.LPAR, TokenType.STRING, TokenType.BIGINT, ...SPECIAL_IDENTIFIER_TOKENS)) {
-                return this.simple_stmt();
-            }
-            const startToken = this.peek();
-            const endToken = this.synchronize() ? this.previous() : this.peek();
-            try {
-                this.parse_invalid(startToken, endToken);
-            }
-            catch (e) {
-                if (e instanceof exports.ParserErrors.BaseParserError) {
-                    throw (e);
-                }
-            }
-            throw new exports.ParserErrors.GenericUnexpectedSyntaxError(startToken.line, startToken.col, this.source, startToken.indexInSource, endToken.indexInSource);
-        }
-        compound_stmt() {
-            if (this.match(TokenType.IF)) {
-                return this.if_stmt();
-            }
-            else if (this.match(TokenType.WHILE)) {
-                return this.while_stmt();
-            }
-            else if (this.match(TokenType.FOR)) {
-                return this.for_stmt();
-            }
-            else if (this.match(TokenType.DEF)) {
-                return this.funcdef();
-            }
-            throw new Error("Unreachable code path");
-        }
-        if_stmt() {
-            const startToken = this.previous();
-            let start = this.previous();
-            let cond = this.test();
-            this.consume(TokenType.COLON, "Expected ':' after if");
-            let block = this.suite();
-            let elseStmt = null;
-            if (this.match(TokenType.ELIF)) {
-                elseStmt = [this.if_stmt()];
-            }
-            else if (this.match(TokenType.ELSE)) {
-                this.consume(TokenType.COLON, "Expect ':' after else");
-                elseStmt = this.suite();
-            }
-            else {
-                throw new exports.ParserErrors.NoElseBlockError(this.source, start);
-            }
-            const endToken = this.previous();
-            return new StmtNS.If(startToken, endToken, cond, block, elseStmt);
-        }
-        while_stmt() {
-            const startToken = this.peek();
-            let cond = this.test();
-            this.consume(TokenType.COLON, "Expected ':' after while");
-            let block = this.suite();
-            const endToken = this.previous();
-            return new StmtNS.While(startToken, endToken, cond, block);
-        }
-        for_stmt() {
-            const startToken = this.peek();
-            let target = this.advance();
-            this.consume(TokenType.IN, "Expected in after for");
-            let iter = this.test();
-            this.consume(TokenType.COLON, "Expected ':' after for");
-            let block = this.suite();
-            const endToken = this.previous();
-            return new StmtNS.For(startToken, endToken, target, iter, block);
-        }
-        funcdef() {
-            const startToken = this.peek();
-            let name = this.advance();
-            let args = this.parameters();
-            this.consume(TokenType.COLON, "Expected ':' after def");
-            let block = this.suite();
-            const endToken = this.previous();
-            return new StmtNS.FunctionDef(startToken, endToken, name, args, block, []);
-        }
-        simple_stmt() {
-            const startToken = this.peek();
-            let res = null;
-            if (this.match(TokenType.NAME)) {
-                res = this.assign_stmt();
-            }
-            else if (this.match(TokenType.INDENT)) {
-                res = new StmtNS.Indent(startToken, startToken);
-            }
-            else if (this.match(TokenType.DEDENT)) {
-                res = new StmtNS.Dedent(startToken, startToken);
-            }
-            else if (this.match(TokenType.PASS)) {
-                res = new StmtNS.Pass(startToken, startToken);
-            }
-            else if (this.match(TokenType.BREAK)) {
-                res = new StmtNS.Break(startToken, startToken);
-            }
-            else if (this.match(TokenType.CONTINUE)) {
-                res = new StmtNS.Continue(startToken, startToken);
-            }
-            else if (this.match(TokenType.RETURN)) {
-                res = new StmtNS.Return(startToken, startToken, this.check(TokenType.NEWLINE) ? null : this.test());
-            }
-            else if (this.match(TokenType.FROM)) {
-                res = this.import_from();
-            }
-            else if (this.match(TokenType.GLOBAL)) {
-                res = new StmtNS.Global(startToken, startToken, this.advance());
-            }
-            else if (this.match(TokenType.NONLOCAL)) {
-                res = new StmtNS.NonLocal(startToken, startToken, this.advance());
-            }
-            else if (this.match(TokenType.ASSERT)) {
-                res = new StmtNS.Assert(startToken, startToken, this.test());
-            }
-            else if (this.check(TokenType.LPAR, TokenType.NUMBER, TokenType.STRING, TokenType.BIGINT, TokenType.MINUS, TokenType.PLUS, ...SPECIAL_IDENTIFIER_TOKENS)) {
-                res = new StmtNS.SimpleExpr(startToken, startToken, this.test());
-            }
-            else {
-                throw new Error("Unreachable code path");
-            }
-            this.consume(TokenType.NEWLINE, "Expected newline");
-            return res;
-        }
-        assign_stmt() {
-            const startToken = this.previous();
-            const name = this.previous();
-            if (this.check(TokenType.COLON)) {
-                const ann = this.test();
-                this.consume(TokenType.EQUAL, "Expect equal in assignment");
-                const expr = this.test();
-                return new StmtNS.AnnAssign(startToken, this.previous(), name, expr, ann);
-            }
-            else if (this.check(TokenType.EQUAL)) {
-                this.advance();
-                const expr = this.test();
-                return new StmtNS.Assign(startToken, this.previous(), name, expr);
-            }
-            else {
-                this.current--;
-                const expr = this.test();
-                return new StmtNS.SimpleExpr(startToken, this.previous(), expr);
-            }
-        }
-        import_from() {
-            const startToken = this.previous();
-            const module = this.advance();
-            this.consume(TokenType.IMPORT, "Expected import keyword");
-            let params;
-            if (this.check(TokenType.NAME)) {
-                params = [this.advance()];
-            }
-            else {
-                params = this.parameters();
-            }
-            return new StmtNS.FromImport(startToken, this.previous(), module, params);
-        }
-        parameters() {
-            this.consume(TokenType.LPAR, "Expected opening parentheses");
-            let res = this.varparamslist();
-            this.consume(TokenType.RPAR, "Expected closing parentheses");
-            return res;
-        }
-        test() {
-            if (this.match(TokenType.LAMBDA)) {
-                return this.lambdef();
-            }
-            else {
-                const startToken = this.peek();
-                let consequent = this.or_test();
-                if (this.match(TokenType.IF)) {
-                    const predicate = this.or_test();
-                    this.consume(TokenType.ELSE, "Expected else");
-                    const alternative = this.test();
-                    return new ExprNS.Ternary(startToken, this.previous(), predicate, consequent, alternative);
-                }
-                return consequent;
-            }
-        }
-        lambdef() {
-            const startToken = this.previous();
-            let args = this.varparamslist();
-            if (this.match(TokenType.COLON)) {
-                let test = this.test();
-                return new ExprNS.Lambda(startToken, this.previous(), args, test);
-            }
-            else if (this.match(TokenType.DOUBLECOLON)) {
-                let block = this.suite();
-                return new ExprNS.MultiLambda(startToken, this.previous(), args, block, []);
-            }
-            this.consume(TokenType.COLON, "Expected ':' after lambda");
-            throw new Error("unreachable code path");
-        }
-        suite() {
-            let stmts = [];
-            if (this.match(TokenType.NEWLINE)) {
-                this.consume(TokenType.INDENT, "Expected indent");
-                while (!this.match(TokenType.DEDENT)) {
-                    stmts.push(this.stmt());
-                }
-            }
-            return stmts;
-        }
-        varparamslist() {
-            let params = [];
-            while (!this.check(TokenType.COLON) && !this.check(TokenType.RPAR)) {
-                let name = this.consume(TokenType.NAME, "Expected a proper identifier in parameter");
-                params.push(name);
-                if (!this.match(TokenType.COMMA)) {
-                    break;
-                }
-            }
-            return params;
-        }
-        or_test() {
-            const startToken = this.peek();
-            let expr = this.and_test();
-            while (this.match(TokenType.OR)) {
-                const operator = this.previous();
-                const right = this.and_test();
-                expr = new ExprNS.BoolOp(startToken, this.previous(), expr, operator, right);
-            }
-            return expr;
-        }
-        and_test() {
-            const startToken = this.peek();
-            let expr = this.not_test();
-            while (this.match(TokenType.AND)) {
-                const operator = this.previous();
-                const right = this.not_test();
-                expr = new ExprNS.BoolOp(startToken, this.previous(), expr, operator, right);
-            }
-            return expr;
-        }
-        not_test() {
-            const startToken = this.peek();
-            if (this.match(TokenType.NOT, TokenType.BANG)) {
-                const operator = this.previous();
-                return new ExprNS.Unary(startToken, this.previous(), operator, this.not_test());
-            }
-            return this.comparison();
-        }
-        comparison() {
-            const startToken = this.peek();
-            let expr = this.arith_expr();
-            // @TODO: Add the rest of the comparisons
-            while (this.match(TokenType.LESS, TokenType.GREATER, TokenType.DOUBLEEQUAL, TokenType.GREATEREQUAL, TokenType.LESSEQUAL, TokenType.NOTEQUAL, TokenType.IS, TokenType.ISNOT, TokenType.IN, TokenType.NOTIN)) {
-                const operator = this.previous();
-                const right = this.arith_expr();
-                expr = new ExprNS.Compare(startToken, this.previous(), expr, operator, right);
-            }
-            return expr;
-        }
-        arith_expr() {
-            const startToken = this.peek();
-            let expr = this.term();
-            while (this.match(TokenType.PLUS, TokenType.MINUS)) {
-                const token = this.previous();
-                const right = this.term();
-                expr = new ExprNS.Binary(startToken, this.previous(), expr, token, right);
-            }
-            return expr;
-        }
-        term() {
-            const startToken = this.peek();
-            let expr = this.factor();
-            while (this.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT, TokenType.DOUBLESLASH)) {
-                const token = this.previous();
-                const right = this.factor();
-                expr = new ExprNS.Binary(startToken, this.previous(), expr, token, right);
-            }
-            return expr;
-        }
-        factor() {
-            const startToken = this.peek();
-            if (this.match(TokenType.PLUS, TokenType.MINUS)) {
-                const op = this.previous();
-                const factor = this.factor();
-                const endToken = this.previous();
-                return new ExprNS.Unary(startToken, endToken, op, factor);
-            }
-            return this.power();
-        }
-        power() {
-            const startToken = this.peek();
-            let expr = this.atom_expr();
-            if (this.match(TokenType.DOUBLESTAR)) {
-                const token = this.previous();
-                const right = this.factor();
-                const endToken = this.previous();
-                return new ExprNS.Binary(startToken, endToken, expr, token, right);
-            }
-            return expr;
-        }
-        atom_expr() {
-            let startToken = this.peek();
-            let ato = this.atom();
-            let res;
-            if (this.match(TokenType.LPAR)) {
-                let args = this.arglist();
-                const endToken = this.previous();
-                res = new ExprNS.Call(startToken, endToken, ato, args);
-            }
-            else {
-                return ato;
-            }
-            // To handle things like x()()()
-            startToken = this.peek();
-            while (this.match(TokenType.LPAR)) {
-                let args = this.arglist();
-                res = new ExprNS.Call(startToken, this.previous(), res, args);
-                startToken = this.peek();
-            }
-            return res;
-        }
-        arglist() {
-            let args = [];
-            while (!this.check(TokenType.RPAR)) {
-                let arg = this.test();
-                args.push(arg);
-                if (!this.match(TokenType.COMMA)) {
-                    break;
-                }
-            }
-            this.consume(TokenType.RPAR, "Expected closing ')' after function application");
-            return args;
-        }
-        atom() {
-            const startToken = this.peek();
-            if (this.match(TokenType.TRUE))
-                return new ExprNS.Literal(startToken, this.previous(), true);
-            if (this.match(TokenType.FALSE))
-                return new ExprNS.Literal(startToken, this.previous(), false);
-            if (this.match(TokenType.NONE))
-                return new ExprNS.None(startToken, this.previous());
-            if (this.match(TokenType.STRING)) {
-                return new ExprNS.Literal(startToken, this.previous(), this.previous().lexeme);
-            }
-            if (this.match(TokenType.NUMBER)) {
-                return new ExprNS.Literal(startToken, this.previous(), Number(this.previous().lexeme.replace(/_/g, "")));
-            }
-            if (this.match(TokenType.BIGINT)) {
-                return new ExprNS.BigIntLiteral(startToken, this.previous(), this.previous().lexeme);
-            }
-            if (this.match(TokenType.COMPLEX)) {
-                return new ExprNS.Complex(startToken, this.previous(), this.previous().lexeme);
-            }
-            if (this.match(TokenType.NAME, ...PSEUD_NAMES)) {
-                return new ExprNS.Variable(startToken, this.previous(), this.previous());
-            }
-            if (this.match(TokenType.LPAR)) {
-                let expr = this.test();
-                this.consume(TokenType.RPAR, "Expected closing ')'");
-                return new ExprNS.Grouping(startToken, this.previous(), expr);
-            }
-            const startTokenInvalid = this.peek();
-            this.synchronize();
-            const endTokenInvalid = this.peek();
-            throw new exports.ParserErrors.GenericUnexpectedSyntaxError(startToken.line, startToken.col, this.source, startTokenInvalid.indexInSource, endTokenInvalid.indexInSource);
-        }
-        //// INVALID RULES
-        parse_invalid(startToken, endToken) {
-            // @TODO invalid rules
-        }
-    }
-
-    /*
-    * Translate our AST to estree AST (Source's AST)
-    * */
-    class Translator {
-        constructor(source) {
-            this.source = source;
-        }
-        tokenToEstreeLocation(token) {
-            // Convert zero-based to one-based.
-            const line = token.line + 1;
-            const start = {
-                line,
-                column: token.col - token.lexeme.length
-            };
-            const end = {
-                line,
-                column: token.col
-            };
-            const source = token.lexeme;
-            return { source, start, end };
-        }
-        toEstreeLocation(stmt) {
-            const start = {
-                // Convert zero-based to one-based.
-                line: stmt.startToken.line + 1,
-                column: stmt.startToken.col - stmt.startToken.lexeme.length
-            };
-            const end = {
-                // Convert zero-based to one-based.
-                line: stmt.endToken.line + 1,
-                column: stmt.endToken.col
-            };
-            const source = this.source.slice(stmt.startToken.indexInSource, stmt.endToken.indexInSource + stmt.endToken.lexeme.length);
-            return { source, start, end };
-        }
-        resolve(stmt) {
-            return stmt.accept(this);
-        }
-        // Ugly, but just to support proper typing
-        resolveStmt(stmt) {
-            return stmt.accept(this);
-        }
-        resolveManyStmt(stmts) {
-            const res = [];
-            for (const stmt of stmts) {
-                res.push(this.resolveStmt(stmt));
-            }
-            return res;
-        }
-        resolveExpr(expr) {
-            return expr.accept(this);
-        }
-        resolveManyExpr(exprs) {
-            const res = [];
-            for (const expr of exprs) {
-                res.push(this.resolveExpr(expr));
-            }
-            return res;
-        }
-        // Converts our internal identifier to estree identifier.
-        rawStringToIdentifier(name, stmtOrExpr) {
-            const keywords = new Set(['abstract', 'arguments', 'await', 'boolean', 'byte',
-                'case', 'catch', 'char', 'const', 'debugger', 'default', 'delete', 'do', 'double', 'enum',
-                'eval', 'export', 'extends', 'false', 'final', 'float', 'function', 'goto', 'implements',
-                'instanceof', 'int', 'interface', 'let', 'long', 'native', 'new', 'null', 'package',
-                'private', 'protected', 'public', 'short', 'static', 'super', 'switch', 'synchronized', 'this',
-                'throw', 'throws', 'transient', 'true', 'typeof', 'var', 'void', 'volatile']);
-            return {
-                type: 'Identifier',
-                name: keywords.has(name) ? '$' + name : name,
-                loc: this.toEstreeLocation(stmtOrExpr),
-            };
-        }
-        // Token to estree identifier.
-        convertToIdentifier(name) {
-            const keywords = new Set(['abstract', 'arguments', 'await', 'boolean', 'byte',
-                'case', 'catch', 'char', 'const', 'debugger', 'default', 'delete', 'do', 'double', 'enum',
-                'eval', 'export', 'extends', 'false', 'final', 'float', 'function', 'goto', 'implements',
-                'instanceof', 'int', 'interface', 'let', 'long', 'native', 'new', 'null', 'package',
-                'private', 'protected', 'public', 'short', 'static', 'super', 'switch', 'synchronized', 'this',
-                'throw', 'throws', 'transient', 'true', 'typeof', 'var', 'void', 'volatile']);
-            return {
-                type: 'Identifier',
-                name: keywords.has(name.lexeme) ? '$' + name.lexeme : name.lexeme,
-                loc: this.tokenToEstreeLocation(name),
-            };
-        }
-        convertToIdentifiers(names) {
-            return names.map(name => this.convertToIdentifier(name));
-        }
-        // private convertToExpressionStatement(expr: Expression): ExpressionStatement {
-        //     return {
-        //         type: 'ExpressionStatement',
-        //         expression: expr,
-        //         // loc: this.toEstreeLocation(),
-        //     }
-        // }
-        // private converTokenstoDecls(varDecls: Token[]): VariableDeclaration {
-        //     return {
-        //         type: 'VariableDeclaration',
-        //         declarations: varDecls?.map((token): VariableDeclarator => {
-        //             return {
-        //                 type: 'VariableDeclarator',
-        //                 id: this.convertToIdentifier(token),
-        //                 loc: this.tokenToEstreeLocation(token),
-        //             }
-        //         }),
-        //         kind: 'var',
-        //         loc: this.toEstreeLocation(),
-        //     };
-        // }
-        // Wraps an array of statements to a block.
-        // WARNING: THIS CREATES A NEW BLOCK IN
-        // JS AST. THIS ALSO MEANS A NEW NAMESPACE. BE CAREFUL!
-        wrapInBlock(stmt, stmts) {
-            return {
-                type: 'BlockStatement',
-                body: this.resolveManyStmt(stmts),
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        //// STATEMENTS
-        visitFileInputStmt(stmt) {
-            const newBody = this.resolveManyStmt(stmt.statements);
-            // if (stmt.varDecls !== null && stmt.varDecls.length > 0) {
-            //     const decls = this.converTokenstoDecls(stmt.varDecls);
-            //     newBody.unshift(decls);
-            // }
-            return {
-                type: 'Program',
-                sourceType: 'module',
-                body: newBody,
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitIndentCreation(stmt) {
-            return {
-                type: 'EmptyStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitDedentCreation(stmt) {
-            return {
-                type: 'EmptyStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitFunctionDefStmt(stmt) {
-            const newBody = this.resolveManyStmt(stmt.body);
-            // if (stmt.varDecls !== null && stmt.varDecls.length > 0) {
-            //     const decls = this.converTokenstoDecls(stmt.varDecls);
-            //     newBody.unshift(decls);
-            // }
-            return {
-                type: 'FunctionDeclaration',
-                id: this.convertToIdentifier(stmt.name),
-                params: this.convertToIdentifiers(stmt.parameters),
-                body: {
-                    type: 'BlockStatement',
-                    body: newBody,
-                },
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitAnnAssignStmt(stmt) {
-            return {
-                type: 'AssignmentExpression',
-                // We only have one type of assignment in restricted Python.
-                operator: '=',
-                left: this.convertToIdentifier(stmt.name),
-                right: this.resolveExpr(stmt.value),
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        // Note: assignments are expressions in JS.
-        visitAssignStmt(stmt) {
-            // return this.convertToExpressionStatement({
-            //     type: 'AssignmentExpression',
-            //     // We only have one type of assignment in restricted Python.
-            //     operator: '=',
-            //     left: this.convertToIdentifier(stmt.name),
-            //     right: this.resolveExpr(stmt.value),
-            //     loc: this.toEstreeLocation(stmt),
-            // })
-            const declaration = {
-                type: 'VariableDeclarator',
-                id: this.convertToIdentifier(stmt.name),
-                loc: this.tokenToEstreeLocation(stmt.name),
-                init: this.resolveExpr(stmt.value),
-            };
-            return {
-                type: 'VariableDeclaration',
-                declarations: [declaration],
-                // Note: we abuse the fact that var is function and module scoped
-                // which is exactly the same as how Python assignments are scoped!
-                kind: 'var',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        // Convert to source's built-in assert function.
-        visitAssertStmt(stmt) {
-            return {
-                type: 'CallExpression',
-                optional: false,
-                callee: this.rawStringToIdentifier('assert', stmt),
-                arguments: [this.resolveExpr(stmt.value)],
-                // @TODO, this needs to come after callee
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        // @TODO decide how to do for loops
-        // For now, empty block
-        visitForStmt(stmt) {
-            return {
-                type: 'EmptyStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitIfStmt(stmt) {
-            return {
-                type: 'IfStatement',
-                test: this.resolveExpr(stmt.condition),
-                consequent: this.wrapInBlock(stmt, stmt.body),
-                alternate: stmt.elseBlock !== null ? this.wrapInBlock(stmt, stmt.elseBlock) : null,
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitGlobalStmt(stmt) {
-            return {
-                type: 'EmptyStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitNonLocalStmt(stmt) {
-            return {
-                type: 'EmptyStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitReturnStmt(stmt) {
-            return {
-                type: 'ReturnStatement',
-                argument: stmt.value == null ? null : this.resolveExpr(stmt.value),
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitWhileStmt(stmt) {
-            return {
-                type: 'WhileStatement',
-                test: this.resolveExpr(stmt.condition),
-                body: this.wrapInBlock(stmt, stmt.body),
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitSimpleExprStmt(stmt) {
-            return {
-                type: 'ExpressionStatement',
-                expression: this.resolveExpr(stmt.expression),
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        // @TODO
-        visitFromImportStmt(stmt) {
-            const specifiers = stmt.names.map(name => {
-                const ident = this.convertToIdentifier(name);
-                return {
-                    type: 'ImportSpecifier',
-                    imported: ident,
-                    local: ident,
-                };
-            });
-            return {
-                type: 'ImportDeclaration',
-                specifiers: specifiers,
-                source: {
-                    type: 'Literal',
-                    value: stmt.module.lexeme,
-                    loc: this.tokenToEstreeLocation(stmt.module)
-                },
-                attributes: []
-            };
-        }
-        visitContinueStmt(stmt) {
-            return {
-                type: 'ContinueStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitBreakStmt(stmt) {
-            return {
-                type: 'BreakStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        visitPassStmt(stmt) {
-            return {
-                type: 'EmptyStatement',
-                loc: this.toEstreeLocation(stmt),
-            };
-        }
-        //// EXPRESSIONS
-        visitVariableExpr(expr) {
-            return this.convertToIdentifier(expr.name);
-        }
-        visitLambdaExpr(expr) {
-            return {
-                type: 'ArrowFunctionExpression',
-                expression: true,
-                params: this.convertToIdentifiers(expr.parameters),
-                body: this.resolveExpr(expr.body),
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        // disabled for now
-        visitMultiLambdaExpr(expr) {
-            return {
-                type: 'EmptyStatement',
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitUnaryExpr(expr) {
-            const op = expr.operator.type;
-            let res = '-';
-            let plus = false;
-            switch (op) {
-                case TokenType.NOT:
-                    res = '!';
-                    break;
-                case TokenType.PLUS:
-                    res = '+';
-                    plus = true;
-                    break;
-                case TokenType.MINUS:
-                    res = '-';
-                    break;
-                default:
-                    throw new Error("Unreachable code path in translator");
-            }
-            if (plus) {
-                return {
-                    type: 'CallExpression',
-                    optional: false,
-                    callee: {
-                        type: 'Identifier',
-                        name: '__py_unary_plus',
-                        loc: this.toEstreeLocation(expr),
-                    },
-                    arguments: [this.resolveExpr(expr.right)],
-                    loc: this.toEstreeLocation(expr),
-                };
-            }
-            return {
-                type: 'UnaryExpression',
-                // To satisfy the type checker.
-                operator: res,
-                prefix: true,
-                argument: this.resolveExpr(expr.right),
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitGroupingExpr(expr) {
-            return this.resolveExpr(expr.expression);
-        }
-        visitBinaryExpr(expr) {
-            const op = expr.operator.type;
-            let res = '';
-            // To make the type checker happy.
-            switch (op) {
-                case TokenType.PLUS:
-                    res = '__py_adder';
-                    break;
-                case TokenType.MINUS:
-                    res = '__py_minuser';
-                    break;
-                case TokenType.STAR:
-                    res = '__py_multiplier';
-                    break;
-                case TokenType.SLASH:
-                    res = '__py_divider';
-                    break;
-                case TokenType.PERCENT:
-                    res = '__py_modder';
-                    break;
-                // @TODO double slash and power needs to convert to math exponent/floor divide
-                case TokenType.DOUBLESLASH:
-                    res = '__py_floorer';
-                    break;
-                case TokenType.DOUBLESTAR:
-                    res = '__py_powerer';
-                    break;
-                default:
-                    throw new Error("Unreachable binary code path in translator");
-            }
-            return {
-                type: 'CallExpression',
-                optional: false,
-                callee: {
-                    type: 'Identifier',
-                    name: res,
-                    loc: this.toEstreeLocation(expr),
-                },
-                arguments: [this.resolveExpr(expr.left), this.resolveExpr(expr.right)],
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitCompareExpr(expr) {
-            const op = expr.operator.type;
-            let res = '+';
-            // To make the type checker happy.
-            switch (op) {
-                case TokenType.LESS:
-                    res = '<';
-                    break;
-                case TokenType.GREATER:
-                    res = '>';
-                    break;
-                case TokenType.DOUBLEEQUAL:
-                    res = '===';
-                    break;
-                case TokenType.GREATEREQUAL:
-                    res = '>=';
-                    break;
-                case TokenType.LESSEQUAL:
-                    res = '<=';
-                    break;
-                case TokenType.NOTEQUAL:
-                    res = '!==';
-                    break;
-                // @TODO we need to convert these to builtin function applications.
-                case TokenType.IS:
-                case TokenType.ISNOT:
-                case TokenType.IN:
-                case TokenType.NOTIN:
-                    throw new exports.TranslatorErrors.UnsupportedOperator(expr.operator.line, expr.operator.col, this.source, expr.operator.indexInSource);
-                default:
-                    throw new Error("Unreachable binary code path in translator");
-            }
-            return {
-                type: 'BinaryExpression',
-                operator: res,
-                left: this.resolveExpr(expr.left),
-                right: this.resolveExpr(expr.right),
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitBoolOpExpr(expr) {
-            const op = expr.operator.type;
-            let res = '||';
-            // To make the type checker happy.
-            switch (op) {
-                case TokenType.AND:
-                    res = '&&';
-                    break;
-                case TokenType.OR:
-                    res = '||';
-                    break;
-                default:
-                    throw new Error("Unreachable binary code path in translator");
-            }
-            return {
-                type: 'LogicalExpression',
-                operator: res,
-                left: this.resolveExpr(expr.left),
-                right: this.resolveExpr(expr.right),
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitCallExpr(expr) {
-            return {
-                type: 'CallExpression',
-                optional: false,
-                callee: this.resolveExpr(expr.callee),
-                arguments: this.resolveManyExpr(expr.args),
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitTernaryExpr(expr) {
-            return {
-                type: 'ConditionalExpression',
-                test: this.resolveExpr(expr.predicate),
-                alternate: this.resolveExpr(expr.alternative),
-                consequent: this.resolveExpr(expr.consequent),
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitLiteralExpr(expr) {
-            return {
-                type: 'Literal',
-                value: expr.value,
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitBigIntLiteralExpr(expr) {
-            return {
-                type: 'Literal',
-                bigint: expr.value,
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-        visitNoneExpr(expr) {
-            return {
-                type: 'NoneType',
-                loc: this.toEstreeLocation(expr)
-            };
-        }
-        visitComplexExpr(expr) {
-            return {
-                // 你可以复用 "Literal"，也可以用别的 type 标记
-                // 这里保持和 BigInt 的风格一致
-                type: 'Literal',
-                // 和 visitBigIntLiteralExpr 类似，这里用一个字段来保存复数内容
-                // 比如把它叫做 "complex"
-                // expr.value 是一个 PyComplexNumber, 你可以用 toString(), 或者直接存 real/imag
-                complex: {
-                    real: expr.value.real,
-                    imag: expr.value.imag
-                },
-                // 和其它 literal 一样，加上位置信息
-                loc: this.toEstreeLocation(expr),
-            };
-        }
-    }
-
-    function getDefaultExportFromCjs (x) {
-    	return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, 'default') ? x['default'] : x;
-    }
-
-    function getAugmentedNamespace(n) {
-      if (Object.prototype.hasOwnProperty.call(n, '__esModule')) return n;
-      var f = n.default;
-    	if (typeof f == "function") {
-    		var a = function a () {
-    			if (this instanceof a) {
-            return Reflect.construct(f, arguments, this.constructor);
-    			}
-    			return f.apply(this, arguments);
-    		};
-    		a.prototype = f.prototype;
-      } else a = {};
-      Object.defineProperty(a, '__esModule', {value: true});
-    	Object.keys(n).forEach(function (k) {
-    		var d = Object.getOwnPropertyDescriptor(n, k);
-    		Object.defineProperty(a, k, d.get ? d : {
-    			enumerable: true,
-    			get: function () {
-    				return n[k];
-    			}
-    		});
-    	});
-    	return a;
-    }
-
-    var levenshtein$1 = {exports: {}};
-
-    const peq = new Uint32Array(0x10000);
-    const myers_32 = (a, b) => {
-        const n = a.length;
-        const m = b.length;
-        const lst = 1 << (n - 1);
-        let pv = -1;
-        let mv = 0;
-        let sc = n;
-        let i = n;
-        while (i--) {
-            peq[a.charCodeAt(i)] |= 1 << i;
-        }
-        for (i = 0; i < m; i++) {
-            let eq = peq[b.charCodeAt(i)];
-            const xv = eq | mv;
-            eq |= ((eq & pv) + pv) ^ pv;
-            mv |= ~(eq | pv);
-            pv &= eq;
-            if (mv & lst) {
-                sc++;
-            }
-            if (pv & lst) {
-                sc--;
-            }
-            mv = (mv << 1) | 1;
-            pv = (pv << 1) | ~(xv | mv);
-            mv &= xv;
-        }
-        i = n;
-        while (i--) {
-            peq[a.charCodeAt(i)] = 0;
-        }
-        return sc;
-    };
-    const myers_x = (b, a) => {
-        const n = a.length;
-        const m = b.length;
-        const mhc = [];
-        const phc = [];
-        const hsize = Math.ceil(n / 32);
-        const vsize = Math.ceil(m / 32);
-        for (let i = 0; i < hsize; i++) {
-            phc[i] = -1;
-            mhc[i] = 0;
-        }
-        let j = 0;
-        for (; j < vsize - 1; j++) {
-            let mv = 0;
-            let pv = -1;
-            const start = j * 32;
-            const vlen = Math.min(32, m) + start;
-            for (let k = start; k < vlen; k++) {
-                peq[b.charCodeAt(k)] |= 1 << k;
-            }
-            for (let i = 0; i < n; i++) {
-                const eq = peq[a.charCodeAt(i)];
-                const pb = (phc[(i / 32) | 0] >>> i) & 1;
-                const mb = (mhc[(i / 32) | 0] >>> i) & 1;
-                const xv = eq | mv;
-                const xh = ((((eq | mb) & pv) + pv) ^ pv) | eq | mb;
-                let ph = mv | ~(xh | pv);
-                let mh = pv & xh;
-                if ((ph >>> 31) ^ pb) {
-                    phc[(i / 32) | 0] ^= 1 << i;
-                }
-                if ((mh >>> 31) ^ mb) {
-                    mhc[(i / 32) | 0] ^= 1 << i;
-                }
-                ph = (ph << 1) | pb;
-                mh = (mh << 1) | mb;
-                pv = mh | ~(xv | ph);
-                mv = ph & xv;
-            }
-            for (let k = start; k < vlen; k++) {
-                peq[b.charCodeAt(k)] = 0;
-            }
-        }
-        let mv = 0;
-        let pv = -1;
-        const start = j * 32;
-        const vlen = Math.min(32, m - start) + start;
-        for (let k = start; k < vlen; k++) {
-            peq[b.charCodeAt(k)] |= 1 << k;
-        }
-        let score = m;
-        for (let i = 0; i < n; i++) {
-            const eq = peq[a.charCodeAt(i)];
-            const pb = (phc[(i / 32) | 0] >>> i) & 1;
-            const mb = (mhc[(i / 32) | 0] >>> i) & 1;
-            const xv = eq | mv;
-            const xh = ((((eq | mb) & pv) + pv) ^ pv) | eq | mb;
-            let ph = mv | ~(xh | pv);
-            let mh = pv & xh;
-            score += (ph >>> (m - 1)) & 1;
-            score -= (mh >>> (m - 1)) & 1;
-            if ((ph >>> 31) ^ pb) {
-                phc[(i / 32) | 0] ^= 1 << i;
-            }
-            if ((mh >>> 31) ^ mb) {
-                mhc[(i / 32) | 0] ^= 1 << i;
-            }
-            ph = (ph << 1) | pb;
-            mh = (mh << 1) | mb;
-            pv = mh | ~(xv | ph);
-            mv = ph & xv;
-        }
-        for (let k = start; k < vlen; k++) {
-            peq[b.charCodeAt(k)] = 0;
-        }
-        return score;
-    };
-    const distance = (a, b) => {
-        if (a.length < b.length) {
-            const tmp = b;
-            b = a;
-            a = tmp;
-        }
-        if (b.length === 0) {
-            return a.length;
-        }
-        if (a.length <= 32) {
-            return myers_32(a, b);
-        }
-        return myers_x(a, b);
-    };
-    const closest = (str, arr) => {
-        let min_distance = Infinity;
-        let min_index = 0;
-        for (let i = 0; i < arr.length; i++) {
-            const dist = distance(str, arr[i]);
-            if (dist < min_distance) {
-                min_distance = dist;
-                min_index = i;
-            }
-        }
-        return arr[min_index];
-    };
-
-    var mod$1 = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        closest: closest,
-        distance: distance
-    });
-
-    var require$$0 = /*@__PURE__*/getAugmentedNamespace(mod$1);
-
-    var hasRequiredLevenshtein;
-
-    function requireLevenshtein () {
-    	if (hasRequiredLevenshtein) return levenshtein$1.exports;
-    	hasRequiredLevenshtein = 1;
-    	(function (module, exports) {
-    		(function() {
-    		  
-    		  var collator;
-    		  try {
-    		    collator = (typeof Intl !== "undefined" && typeof Intl.Collator !== "undefined") ? Intl.Collator("generic", { sensitivity: "base" }) : null;
-    		  } catch (err){
-    		    console.log("Collator could not be initialized and wouldn't be used");
-    		  }
-
-    		  var levenshtein = require$$0;
-
-    		  // arrays to re-use
-    		  var prevRow = [],
-    		    str2Char = [];
-    		  
-    		  /**
-    		   * Based on the algorithm at http://en.wikipedia.org/wiki/Levenshtein_distance.
-    		   */
-    		  var Levenshtein = {
-    		    /**
-    		     * Calculate levenshtein distance of the two strings.
-    		     *
-    		     * @param str1 String the first string.
-    		     * @param str2 String the second string.
-    		     * @param [options] Additional options.
-    		     * @param [options.useCollator] Use `Intl.Collator` for locale-sensitive string comparison.
-    		     * @return Integer the levenshtein distance (0 and above).
-    		     */
-    		    get: function(str1, str2, options) {
-    		      var useCollator = (options && collator && options.useCollator);
-    		      
-    		      if (useCollator) {
-    		        var str1Len = str1.length,
-    		          str2Len = str2.length;
-    		        
-    		        // base cases
-    		        if (str1Len === 0) return str2Len;
-    		        if (str2Len === 0) return str1Len;
-
-    		        // two rows
-    		        var curCol, nextCol, i, j, tmp;
-
-    		        // initialise previous row
-    		        for (i=0; i<str2Len; ++i) {
-    		          prevRow[i] = i;
-    		          str2Char[i] = str2.charCodeAt(i);
-    		        }
-    		        prevRow[str2Len] = str2Len;
-
-    		        var strCmp;
-    		        // calculate current row distance from previous row using collator
-    		        for (i = 0; i < str1Len; ++i) {
-    		          nextCol = i + 1;
-
-    		          for (j = 0; j < str2Len; ++j) {
-    		            curCol = nextCol;
-
-    		            // substution
-    		            strCmp = 0 === collator.compare(str1.charAt(i), String.fromCharCode(str2Char[j]));
-
-    		            nextCol = prevRow[j] + (strCmp ? 0 : 1);
-
-    		            // insertion
-    		            tmp = curCol + 1;
-    		            if (nextCol > tmp) {
-    		              nextCol = tmp;
-    		            }
-    		            // deletion
-    		            tmp = prevRow[j + 1] + 1;
-    		            if (nextCol > tmp) {
-    		              nextCol = tmp;
-    		            }
-
-    		            // copy current col value into previous (in preparation for next iteration)
-    		            prevRow[j] = curCol;
-    		          }
-
-    		          // copy last col value into previous (in preparation for next iteration)
-    		          prevRow[j] = nextCol;
-    		        }
-    		        return nextCol;
-    		      }
-    		      return levenshtein.distance(str1, str2);
-    		    }
-
-    		  };
-
-    		  // amd
-    		  if (module !== null && 'object' !== "undefined" && module.exports === exports) {
-    		    module.exports = Levenshtein;
-    		  }
-    		  // web worker
-    		  else if (typeof self !== "undefined" && typeof self.postMessage === 'function' && typeof self.importScripts === 'function') {
-    		    self.Levenshtein = Levenshtein;
-    		  }
-    		  // browser main thread
-    		  else if (typeof window !== "undefined" && window !== null) {
-    		    window.Levenshtein = Levenshtein;
-    		  }
-    		}()); 
-    	} (levenshtein$1, levenshtein$1.exports));
-    	return levenshtein$1.exports;
-    }
-
-    var levenshteinExports = requireLevenshtein();
-    var levenshtein = /*@__PURE__*/getDefaultExportFromCjs(levenshteinExports);
-
-    // const levenshtein = require('fast-levenshtein');
-    const RedefineableTokenSentinel = new Token(TokenType.AT, "", 0, 0, 0);
-    class Environment {
-        constructor(source, enclosing, names) {
-            this.source = source;
-            this.enclosing = enclosing;
-            this.names = names;
-            this.functions = new Set();
-            this.moduleBindings = new Set();
-        }
-        /*
-        * Does a full lookup up the environment chain for a name.
-        * Returns the distance of the name from the current environment.
-        * If name isn't found, return -1.
-        * */
-        lookupName(identifier) {
-            const name = identifier.lexeme;
-            let distance = 0;
-            let curr = this;
-            while (curr !== null) {
-                if (curr.names.has(name)) {
-                    break;
-                }
-                distance += 1;
-                curr = curr.enclosing;
-            }
-            return (curr === null) ? -1 : distance;
-        }
-        /* Looks up the name but only for the current environment. */
-        lookupNameCurrentEnv(identifier) {
-            return this.names.get(identifier.lexeme);
-        }
-        lookupNameCurrentEnvWithError(identifier) {
-            if (this.lookupName(identifier) < 0) {
-                throw new exports.ResolverErrors.NameNotFoundError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, this.suggestName(identifier));
-            }
-        }
-        lookupNameParentEnvWithError(identifier) {
-            const name = identifier.lexeme;
-            let parent = this.enclosing;
-            if (parent === null || !parent.names.has(name)) {
-                throw new exports.ResolverErrors.NameNotFoundError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + name.length, this.suggestName(identifier));
-            }
-        }
-        declareName(identifier) {
-            const lookup = this.lookupNameCurrentEnv(identifier);
-            if (lookup !== undefined && lookup !== RedefineableTokenSentinel) {
-                throw new exports.ResolverErrors.NameReassignmentError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, lookup);
-            }
-            this.names.set(identifier.lexeme, identifier);
-        }
-        // Same as declareName but allowed to re-declare later.
-        declarePlaceholderName(identifier) {
-            const lookup = this.lookupNameCurrentEnv(identifier);
-            if (lookup !== undefined) {
-                throw new exports.ResolverErrors.NameReassignmentError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, lookup);
-            }
-            this.names.set(identifier.lexeme, RedefineableTokenSentinel);
-        }
-        suggestNameCurrentEnv(identifier) {
-            const name = identifier.lexeme;
-            let minDistance = Infinity;
-            let minName = null;
-            for (const declName of this.names.keys()) {
-                const dist = levenshtein.get(name, declName);
-                if (dist < minDistance) {
-                    minDistance = dist;
-                    minName = declName;
-                }
-            }
-            return minName;
-        }
-        /*
-        * Finds name closest to name in all environments up to builtin environment.
-        * Calculated using min levenshtein distance.
-        * */
-        suggestName(identifier) {
-            const name = identifier.lexeme;
-            let minDistance = Infinity;
-            let minName = null;
-            let curr = this;
-            while (curr !== null) {
-                for (const declName of curr.names.keys()) {
-                    const dist = levenshtein.get(name, declName);
-                    if (dist < minDistance) {
-                        minDistance = dist;
-                        minName = declName;
-                    }
-                }
-                curr = curr.enclosing;
-            }
-            if (minDistance >= 4) {
-                // This is pretty far, so just return null
-                return null;
-            }
-            return minName;
-        }
-    }
-    class Resolver {
-        constructor(source, ast) {
-            this.source = source;
-            this.ast = ast;
-            // The global environment
-            this.environment = new Environment(source, null, new Map([
-                // misc library
-                ["_int", new Token(TokenType.NAME, "_int", 0, 0, 0)],
-                ["_int_from_string", new Token(TokenType.NAME, "_int_from_string", 0, 0, 0)],
-                ["abs", new Token(TokenType.NAME, "abs", 0, 0, 0)],
-                ["char_at", new Token(TokenType.NAME, "char_at", 0, 0, 0)],
-                ["error", new Token(TokenType.NAME, "error", 0, 0, 0)],
-                ["input", new Token(TokenType.NAME, "input", 0, 0, 0)],
-                ["isinstance", new Token(TokenType.NAME, "isinstance", 0, 0, 0)],
-                ["max", new Token(TokenType.NAME, "max", 0, 0, 0)],
-                ["min", new Token(TokenType.NAME, "min", 0, 0, 0)],
-                ["print", new Token(TokenType.NAME, "print", 0, 0, 0)],
-                ["random_random", new Token(TokenType.NAME, "random_random", 0, 0, 0)],
-                ["round", new Token(TokenType.NAME, "round", 0, 0, 0)],
-                ["str", new Token(TokenType.NAME, "str", 0, 0, 0)],
-                ["time_time", new Token(TokenType.NAME, "time_time", 0, 0, 0)],
-                // math constants
-                ["math_pi", new Token(TokenType.NAME, "math_pi", 0, 0, 0)],
-                ["math_e", new Token(TokenType.NAME, "math_e", 0, 0, 0)],
-                ["math_inf", new Token(TokenType.NAME, "math_inf", 0, 0, 0)],
-                ["math_nan", new Token(TokenType.NAME, "math_nan", 0, 0, 0)],
-                ["math_tau", new Token(TokenType.NAME, "math_tau", 0, 0, 0)],
-                // math library
-                ["math_acos", new Token(TokenType.NAME, "math_acos", 0, 0, 0)],
-                ["math_acosh", new Token(TokenType.NAME, "math_acosh", 0, 0, 0)],
-                ["math_asin", new Token(TokenType.NAME, "math_asin", 0, 0, 0)],
-                ["math_asinh", new Token(TokenType.NAME, "math_asinh", 0, 0, 0)],
-                ["math_atan", new Token(TokenType.NAME, "math_atan", 0, 0, 0)],
-                ["math_atan2", new Token(TokenType.NAME, "math_atan2", 0, 0, 0)],
-                ["math_atanh", new Token(TokenType.NAME, "math_atanh", 0, 0, 0)],
-                ["math_cbrt", new Token(TokenType.NAME, "math_cbrt", 0, 0, 0)],
-                ["math_ceil", new Token(TokenType.NAME, "math_ceil", 0, 0, 0)],
-                ["math_comb", new Token(TokenType.NAME, "math_comb", 0, 0, 0)],
-                ["math_copysign", new Token(TokenType.NAME, "math_copysign", 0, 0, 0)],
-                ["math_cos", new Token(TokenType.NAME, "math_cos", 0, 0, 0)],
-                ["math_cosh", new Token(TokenType.NAME, "math_cosh", 0, 0, 0)],
-                ["math_degrees", new Token(TokenType.NAME, "math_degrees", 0, 0, 0)],
-                ["math_erf", new Token(TokenType.NAME, "math_erf", 0, 0, 0)],
-                ["math_erfc", new Token(TokenType.NAME, "math_erfc", 0, 0, 0)],
-                ["math_exp", new Token(TokenType.NAME, "math_exp", 0, 0, 0)],
-                ["math_exp2", new Token(TokenType.NAME, "math_exp2", 0, 0, 0)],
-                ["math_expm1", new Token(TokenType.NAME, "math_expm1", 0, 0, 0)],
-                ["math_fabs", new Token(TokenType.NAME, "math_fabs", 0, 0, 0)],
-                ["math_factorial", new Token(TokenType.NAME, "math_factorial", 0, 0, 0)],
-                ["math_floor", new Token(TokenType.NAME, "math_floor", 0, 0, 0)],
-                ["math_fma", new Token(TokenType.NAME, "math_fma", 0, 0, 0)],
-                ["math_fmod", new Token(TokenType.NAME, "math_fmod", 0, 0, 0)],
-                ["math_gamma", new Token(TokenType.NAME, "math_gamma", 0, 0, 0)],
-                ["math_gcd", new Token(TokenType.NAME, "math_gcd", 0, 0, 0)],
-                ["math_isfinite", new Token(TokenType.NAME, "math_isfinite", 0, 0, 0)],
-                ["math_isinf", new Token(TokenType.NAME, "math_isinf", 0, 0, 0)],
-                ["math_isnan", new Token(TokenType.NAME, "math_isnan", 0, 0, 0)],
-                ["math_isqrt", new Token(TokenType.NAME, "math_isqrt", 0, 0, 0)],
-                ["math_lcm", new Token(TokenType.NAME, "math_lcm", 0, 0, 0)],
-                ["math_ldexp", new Token(TokenType.NAME, "math_ldexp", 0, 0, 0)],
-                ["math_lgamma", new Token(TokenType.NAME, "math_lgamma", 0, 0, 0)],
-                ["math_log", new Token(TokenType.NAME, "math_log", 0, 0, 0)],
-                ["math_log10", new Token(TokenType.NAME, "math_log10", 0, 0, 0)],
-                ["math_log1p", new Token(TokenType.NAME, "math_log1p", 0, 0, 0)],
-                ["math_log2", new Token(TokenType.NAME, "math_log2", 0, 0, 0)],
-                ["math_nextafter", new Token(TokenType.NAME, "math_nextafter", 0, 0, 0)],
-                ["math_perm", new Token(TokenType.NAME, "math_perm", 0, 0, 0)],
-                ["math_pow", new Token(TokenType.NAME, "math_pow", 0, 0, 0)],
-                ["math_radians", new Token(TokenType.NAME, "math_radians", 0, 0, 0)],
-                ["math_remainder", new Token(TokenType.NAME, "math_remainder", 0, 0, 0)],
-                ["math_sin", new Token(TokenType.NAME, "math_sin", 0, 0, 0)],
-                ["math_sinh", new Token(TokenType.NAME, "math_sinh", 0, 0, 0)],
-                ["math_sqrt", new Token(TokenType.NAME, "math_sqrt", 0, 0, 0)],
-                ["math_tan", new Token(TokenType.NAME, "math_tan", 0, 0, 0)],
-                ["math_tanh", new Token(TokenType.NAME, "math_tanh", 0, 0, 0)],
-                ["math_trunc", new Token(TokenType.NAME, "math_trunc", 0, 0, 0)],
-                ["math_ulp", new Token(TokenType.NAME, "math_ulp", 0, 0, 0)]
-            ]));
-            this.functionScope = null;
-        }
-        resolve(stmt) {
-            var _a;
-            if (stmt === null) {
-                return;
-            }
-            if (stmt instanceof Array) {
-                // Resolve all top-level functions first. Python allows functions declared after
-                // another function to be used in that function.
-                for (const st of stmt) {
-                    if (st instanceof StmtNS.FunctionDef) {
-                        (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declarePlaceholderName(st.name);
-                    }
-                }
-                for (const st of stmt) {
-                    st.accept(this);
-                }
-            }
-            else {
-                stmt.accept(this);
-            }
-        }
-        varDeclNames(names) {
-            const res = Array.from(names.values())
-                .filter(name => {
-                var _a, _b;
-                return (
-                // Filter out functions and module bindings.
-                // Those will be handled separately, so they don't
-                // need to be hoisted.
-                !((_a = this.environment) === null || _a === void 0 ? void 0 : _a.functions.has(name.lexeme))
-                    && !((_b = this.environment) === null || _b === void 0 ? void 0 : _b.moduleBindings.has(name.lexeme)));
-            });
-            return res.length === 0 ? null : res;
-        }
-        functionVarConstraint(identifier) {
-            var _a;
-            if (this.functionScope == null) {
-                return;
-            }
-            let curr = this.environment;
-            while (curr !== this.functionScope) {
-                if (curr !== null && curr.names.has(identifier.lexeme)) {
-                    const token = curr.names.get(identifier.lexeme);
-                    if (token === undefined) {
-                        throw new Error("placeholder error");
-                    }
-                    throw new exports.ResolverErrors.NameReassignmentError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, token);
-                }
-                curr = (_a = curr === null || curr === void 0 ? void 0 : curr.enclosing) !== null && _a !== void 0 ? _a : null;
-            }
-        }
-        //// STATEMENTS
-        visitFileInputStmt(stmt) {
-            // Create a new environment.
-            const oldEnv = this.environment;
-            this.environment = new Environment(this.source, this.environment, new Map());
-            this.resolve(stmt.statements);
-            // Grab identifiers from that new environment. That are NOT functions.
-            // stmt.varDecls = this.varDeclNames(this.environment.names)
-            this.environment = oldEnv;
-        }
-        visitIndentCreation(stmt) {
-            // Create a new environment
-            this.environment = new Environment(this.source, this.environment, new Map());
-        }
-        visitDedentCreation(stmt) {
-            var _a;
-            // Switch to the previous environment.
-            if (((_a = this.environment) === null || _a === void 0 ? void 0 : _a.enclosing) !== undefined) {
-                this.environment = this.environment.enclosing;
-            }
-        }
-        visitFunctionDefStmt(stmt) {
-            var _a, _b;
-            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.name);
-            (_b = this.environment) === null || _b === void 0 ? void 0 : _b.functions.add(stmt.name.lexeme);
-            // Create a new environment.
-            // const oldEnv = this.environment;
-            // Assign the parameters to the new environment.
-            const newEnv = new Map(stmt.parameters.map(param => [param.lexeme, param]));
-            this.environment = new Environment(this.source, this.environment, newEnv);
-            // const params = new Map(
-            //     stmt.parameters.map(param => [param.lexeme, param])
-            // );
-            // if (this.environment !== null) {
-            //     this.environment.names = params;
-            // }
-            this.functionScope = this.environment;
-            this.resolve(stmt.body);
-            // Grab identifiers from that new environment. That are NOT functions.
-            // stmt.varDecls = this.varDeclNames(this.environment.names)
-            // Restore old environment
-            // this.environment = oldEnv;
-        }
-        visitAnnAssignStmt(stmt) {
-            var _a;
-            this.resolve(stmt.ann);
-            this.resolve(stmt.value);
-            this.functionVarConstraint(stmt.name);
-            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.name);
-        }
-        visitAssignStmt(stmt) {
-            var _a;
-            this.resolve(stmt.value);
-            this.functionVarConstraint(stmt.name);
-            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.name);
-        }
-        visitAssertStmt(stmt) {
-            this.resolve(stmt.value);
-        }
-        visitForStmt(stmt) {
-            var _a;
-            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.target);
-            this.resolve(stmt.iter);
-            this.resolve(stmt.body);
-        }
-        visitIfStmt(stmt) {
-            this.resolve(stmt.condition);
-            this.resolve(stmt.body);
-            this.resolve(stmt.elseBlock);
-        }
-        // @TODO we need to treat all global statements as variable declarations in the global
-        // scope.
-        visitGlobalStmt(stmt) {
-            // Do nothing because global can also be declared in our
-            // own scope.
-        }
-        // @TODO nonlocals mean that any variable following that name in the current env
-        // should not create a variable declaration, but instead point to an outer variable.
-        visitNonLocalStmt(stmt) {
-            var _a;
-            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.lookupNameParentEnvWithError(stmt.name);
-        }
-        visitReturnStmt(stmt) {
-            if (stmt.value !== null) {
-                this.resolve(stmt.value);
-            }
-        }
-        visitWhileStmt(stmt) {
-            this.resolve(stmt.condition);
-            this.resolve(stmt.body);
-        }
-        visitSimpleExprStmt(stmt) {
-            this.resolve(stmt.expression);
-        }
-        visitFromImportStmt(stmt) {
-            var _a, _b;
-            for (const name of stmt.names) {
-                (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(name);
-                (_b = this.environment) === null || _b === void 0 ? void 0 : _b.moduleBindings.add(name.lexeme);
-            }
-        }
-        visitContinueStmt(stmt) {
-        }
-        visitBreakStmt(stmt) {
-        }
-        visitPassStmt(stmt) {
-        }
-        //// EXPRESSIONS
-        visitVariableExpr(expr) {
-            var _a;
-            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.lookupNameCurrentEnvWithError(expr.name);
-        }
-        visitLambdaExpr(expr) {
-            // Create a new environment.
-            const oldEnv = this.environment;
-            // Assign the parameters to the new environment.
-            const newEnv = new Map(expr.parameters.map(param => [param.lexeme, param]));
-            this.environment = new Environment(this.source, this.environment, newEnv);
-            this.resolve(expr.body);
-            // Restore old environment
-            this.environment = oldEnv;
-        }
-        visitMultiLambdaExpr(expr) {
-            // Create a new environment.
-            const oldEnv = this.environment;
-            // Assign the parameters to the new environment.
-            const newEnv = new Map(expr.parameters.map(param => [param.lexeme, param]));
-            this.environment = new Environment(this.source, this.environment, newEnv);
-            this.resolve(expr.body);
-            // Grab identifiers from that new environment.
-            expr.varDecls = Array.from(this.environment.names.values());
-            // Restore old environment
-            this.environment = oldEnv;
-        }
-        visitUnaryExpr(expr) {
-            this.resolve(expr.right);
-        }
-        visitGroupingExpr(expr) {
-            this.resolve(expr.expression);
-        }
-        visitBinaryExpr(expr) {
-            this.resolve(expr.left);
-            this.resolve(expr.right);
-        }
-        visitBoolOpExpr(expr) {
-            this.resolve(expr.left);
-            this.resolve(expr.right);
-        }
-        visitCompareExpr(expr) {
-            this.resolve(expr.left);
-            this.resolve(expr.right);
-        }
-        visitCallExpr(expr) {
-            this.resolve(expr.callee);
-            this.resolve(expr.args);
-        }
-        visitTernaryExpr(expr) {
-            this.resolve(expr.predicate);
-            this.resolve(expr.consequent);
-            this.resolve(expr.alternative);
-        }
-        visitNoneExpr(expr) {
-        }
-        visitLiteralExpr(expr) {
-        }
-        visitBigIntLiteralExpr(expr) {
-        }
-        visitComplexExpr(expr) {
-        }
-    }
-
-    class Stack {
-        constructor() {
-            // Bottom of the array is at index 0
-            this.storage = [];
-        }
-        push(...items) {
-            for (const item of items) {
-                this.storage.push(item);
-            }
-        }
-        pop() {
-            return this.storage.pop();
-        }
-        peek() {
-            if (this.isEmpty()) {
-                return undefined;
-            }
-            return this.storage[this.size() - 1];
-        }
-        size() {
-            return this.storage.length;
-        }
-        isEmpty() {
-            return this.size() == 0;
-        }
-        getStack() {
-            // return a copy of the stack's contents
-            return [...this.storage];
-        }
-        some(predicate) {
-            return this.storage.some(predicate);
-        }
-        // required for first-class continuations,
-        // which directly mutate this stack globally.
-        setTo(otherStack) {
-            this.storage = otherStack.storage;
-        }
-    }
-
-    /**
-     * Create a StatementSequence node.
-     */
-    const statementSequence = (body, loc) => ({
-        type: 'StatementSequence',
-        body,
-        loc,
-        innerComments: undefined,
-    });
-    const isNode$1 = (item) => {
-        return typeof item === 'object' && item !== null && 'type' in item;
-    };
-    const isBlockStatement = (node) => {
-        return node.type === 'BlockStatement';
-    };
-    const hasDeclarations = (node) => {
-        return node.body.some(stmt => stmt.type === 'VariableDeclaration' || stmt.type === 'FunctionDeclaration');
-    };
-    const blockArrowFunction = (params, body, loc) => ({
-        type: 'ArrowFunctionExpression',
-        expression: false,
-        generator: false,
-        params,
-        body: Array.isArray(body) ? blockStatement(body) : body,
-        loc
-    });
-    const blockStatement = (body, loc) => ({
-        type: 'BlockStatement',
-        body,
-        loc
-    });
-    const constantDeclaration = (name, init, loc) => declaration(name, 'declaration', init, loc);
-    const declaration = (name, kind, init, loc) => ({
-        type: 'VariableDeclaration',
-        declarations: [
-            {
-                type: 'VariableDeclarator',
-                id: identifier(name),
-                init
-            }
-        ],
-        kind: 'declaration',
-        loc
-    });
-    const identifier = (name, loc) => ({
-        type: 'Identifier',
-        name,
-        loc
-    });
-    const returnStatement = (argument, loc) => ({
-        type: 'ReturnStatement',
-        argument,
-        loc
-    });
-    const hasReturnStatement = (block) => {
-        let hasReturn = false;
-        for (const statement of block.body) {
-            if (isReturnStatement(statement)) {
-                hasReturn = true;
-            }
-            else if (isIfStatement(statement)) {
-                // Parser enforces that if/else have braces (block statement)
-                hasReturn = hasReturn || hasReturnStatementIf(statement);
-            }
-            else if (isBlockStatement(statement) || isStatementSequence$1(statement)) {
-                hasReturn = hasReturn && hasReturnStatement(statement);
-            }
-        }
-        return hasReturn;
-    };
-    const isReturnStatement = (node) => {
-        return node.type == 'ReturnStatement';
-    };
-    const isIfStatement = (node) => {
-        return node.type == 'IfStatement';
-    };
-    const hasReturnStatementIf = (statement) => {
-        let hasReturn = true;
-        // Parser enforces that if/else have braces (block statement)
-        hasReturn = hasReturn && hasReturnStatement(statement.consequent);
-        if (statement.alternate) {
-            if (isIfStatement(statement.alternate)) {
-                hasReturn = hasReturn && hasReturnStatementIf(statement.alternate);
-            }
-            else if (isBlockStatement(statement.alternate) || isStatementSequence$1(statement.alternate)) {
-                hasReturn = hasReturn && hasReturnStatement(statement.alternate);
-            }
-        }
-        return hasReturn;
-    };
-    const isStatementSequence$1 = (node) => {
-        return node.type == 'StatementSequence';
-    };
-    const literal = (value, loc) => ({
-        type: 'Literal',
-        value,
-        loc
-    });
-
-    /**
-     * The heap stores all objects in each environment.
-     */
-    class Heap {
-        constructor() {
-            this.storage = null;
-        }
-        add(...items) {
-            var _a;
-            (_a = this.storage) !== null && _a !== void 0 ? _a : (this.storage = new Set());
-            for (const item of items) {
-                this.storage.add(item);
-            }
-        }
-        /** Checks the existence of `item` in the heap. */
-        contains(item) {
-            var _a, _b;
-            return (_b = (_a = this.storage) === null || _a === void 0 ? void 0 : _a.has(item)) !== null && _b !== void 0 ? _b : false;
-        }
-        /** Gets the number of items in the heap. */
-        size() {
-            var _a, _b;
-            return (_b = (_a = this.storage) === null || _a === void 0 ? void 0 : _a.size) !== null && _b !== void 0 ? _b : 0;
-        }
-        /**
-         * Removes `item` from current heap and adds it to `otherHeap`.
-         * If the current heap does not contain `item`, nothing happens.
-         * @returns whether the item transfer is successful
-         */
-        move(item, otherHeap) {
-            if (!this.contains(item))
-                return false;
-            this.storage.delete(item);
-            otherHeap.add(item);
-            return true;
-        }
-        /** Returns a copy of the heap's contents. */
-        getHeap() {
-            return new Set(this.storage);
-        }
-    }
-
-    const uniqueId = (context) => {
-        return `${context.runtime.objectCount++}`;
-    };
-    const createEnvironment = (context, closure, args, callExpression) => {
-        const environment = {
-            // TODO: name
-            name: '',
-            tail: closure.environment,
-            head: {},
-            heap: new Heap(),
-            id: uniqueId(context),
-            callExpression: Object.assign({}, callExpression)
-        };
-        // console.info('closure.node.params:', closure.node.params);
-        // console.info('Number of params:', closure.node.params.length);
-        closure.node.params.forEach((param, index) => {
-            if (isRestElement(param)) {
-                const array = args.slice(index);
-                handleArrayCreation(context, array, environment);
-                environment.head[param.argument.name] = array;
-            }
-            else {
-                environment.head[param.name] = args[index];
-            }
-        });
-        return environment;
-    };
-    const createSimpleEnvironment = (context, name, tail = null) => {
-        return {
-            id: uniqueId(context),
-            name,
-            tail,
-            head: {},
-            heap: new Heap(),
-            // callExpression 和 thisContext 可选，根据需要传递
-        };
-    };
-    const createProgramEnvironment = (context, isPrelude) => {
-        return createSimpleEnvironment(context, isPrelude ? 'prelude' : 'programEnvironment');
-    };
-    const createBlockEnvironment = (context, name = 'blockEnvironment') => {
-        return {
-            name,
-            tail: currentEnvironment(context),
-            head: {},
-            heap: new Heap(),
-            id: uniqueId(context)
-        };
-    };
-    const isRestElement = (node) => {
-        return node.type === 'RestElement';
-    };
-    const handleArrayCreation = (context, array, envOverride) => {
-        const environment = envOverride !== null && envOverride !== void 0 ? envOverride : currentEnvironment(context);
-        Object.defineProperties(array, {
-            id: { value: uniqueId(context) },
-            environment: { value: environment, writable: true }
-        });
-        environment.heap.add(array); // 假设 heap.add 已定义
-    };
-    const currentEnvironment = (context) => {
-        return context.runtime.environments[0];
-    };
-    const popEnvironment = (context) => context.runtime.environments.shift();
-    const pushEnvironment = (context, environment) => {
-        context.runtime.environments.unshift(environment);
-        context.runtime.environmentTree.insert(environment);
-    };
-
-    var InstrType;
-    (function (InstrType) {
-        InstrType["RESET"] = "Reset";
-        InstrType["WHILE"] = "While";
-        InstrType["FOR"] = "For";
-        InstrType["ASSIGNMENT"] = "Assignment";
-        InstrType["ANN_ASSIGNMENT"] = "AnnAssignment";
-        InstrType["APPLICATION"] = "Application";
-        InstrType["UNARY_OP"] = "UnaryOperation";
-        InstrType["BINARY_OP"] = "BinaryOperation";
-        InstrType["BOOL_OP"] = "BoolOperation";
-        InstrType["COMPARE"] = "Compare";
-        InstrType["CALL"] = "Call";
-        InstrType["RETURN"] = "Return";
-        InstrType["BREAK"] = "Break";
-        InstrType["CONTINUE"] = "Continue";
-        InstrType["IF"] = "If";
-        InstrType["FUNCTION_DEF"] = "FunctionDef";
-        InstrType["LAMBDA"] = "Lambda";
-        InstrType["MULTI_LAMBDA"] = "MultiLambda";
-        InstrType["GROUPING"] = "Grouping";
-        InstrType["LITERAL"] = "Literal";
-        InstrType["VARIABLE"] = "Variable";
-        InstrType["TERNARY"] = "Ternary";
-        InstrType["PASS"] = "Pass";
-        InstrType["ASSERT"] = "Assert";
-        InstrType["IMPORT"] = "Import";
-        InstrType["GLOBAL"] = "Global";
-        InstrType["NONLOCAL"] = "NonLocal";
-        InstrType["Program"] = "Program";
-        InstrType["BRANCH"] = "Branch";
-        InstrType["POP"] = "Pop";
-        InstrType["ENVIRONMENT"] = "environment";
-        InstrType["MARKER"] = "marker";
-    })(InstrType || (InstrType = {}));
-
-    const popInstr = (srcNode) => ({ instrType: InstrType.POP, srcNode });
-    const assmtInstr = (symbol, constant, declaration, srcNode) => ({
-        instrType: InstrType.ASSIGNMENT,
-        symbol,
-        constant,
-        declaration,
-        srcNode
-    });
-    const appInstr = (numOfArgs, srcNode) => ({
-        instrType: InstrType.APPLICATION,
-        numOfArgs,
-        srcNode
-    });
-    const envInstr = (env, srcNode) => ({
-        instrType: InstrType.ENVIRONMENT,
-        env,
-        srcNode
-    });
-    const markerInstr = (srcNode) => ({
-        instrType: InstrType.MARKER,
-        srcNode
-    });
-    const binOpInstr = (symbol, srcNode) => ({
-        instrType: InstrType.BINARY_OP,
-        symbol,
-        srcNode
-    });
-    const resetInstr = (srcNode) => ({
-        instrType: InstrType.RESET,
-        srcNode
-    });
-    const branchInstr = (consequent, alternate, srcNode) => ({
-        instrType: InstrType.BRANCH,
-        consequent,
-        alternate,
-        srcNode
-    });
-    const conditionalExpression = (test, consequent, alternate, loc) => ({
-        type: 'ConditionalExpression',
-        test,
-        consequent,
-        alternate,
-        loc
-    });
-    const unOpInstr = (symbol, srcNode) => ({
-        instrType: InstrType.UNARY_OP,
-        symbol,
-        srcNode
-    });
-
-    // closure.ts
-    class Closure {
-        constructor(node, environment, context, predefined = false) {
-            this.node = node;
-            this.environment = environment;
-            this.context = context;
-            this.predefined = predefined;
-            this.originalNode = node;
-        }
-        static makeFromArrowFunction(node, environment, context, dummyReturn = false, predefined = false) {
-            const functionBody = !isBlockStatement(node.body) && !isStatementSequence(node.body)
-                ? blockStatement([returnStatement(node.body, node.body.loc)], node.body.loc)
-                : dummyReturn && !hasReturnStatement(node.body)
-                    ? blockStatement([
-                        ...node.body.body,
-                        returnStatement(identifier('undefined', node.body.loc), node.body.loc)
-                    ], node.body.loc)
-                    : node.body;
-            const closure = new Closure(blockArrowFunction(node.params, functionBody, node.loc), environment, context, predefined);
-            closure.originalNode = node;
-            return closure;
-        }
-    }
-    const isStatementSequence = (node) => {
-        return node.type == 'StatementSequence';
-    };
-
-    // todo
-    // just put on here temporarily
-    const UNKNOWN_LOCATION = {
-        start: {
-            line: -1,
-            column: -1
-        },
-        end: {
-            line: -1,
-            column: -1
-        }
-    };
-    class RuntimeSourceError {
-        constructor(node) {
-            var _a;
-            this.type = ErrorType.RUNTIME;
-            this.severity = ErrorSeverity.ERROR;
-            this.message = 'Error';
-            this.location = (_a = node === null || node === void 0 ? void 0 : node.loc) !== null && _a !== void 0 ? _a : UNKNOWN_LOCATION;
-        }
-        explain() {
-            return '';
-        }
-        elaborate() {
-            return this.explain();
-        }
-    }
-
-    class TypeConcatenateError extends RuntimeSourceError {
-        constructor(node) {
-            super(node);
-            this.type = ErrorType.TYPE;
-        }
-        explain() {
-            return `TypeError: can only concatenate str (not "int") to str.`;
-        }
-        elaborate() {
-            return `You are trying to concatenate a string with an integer. To fix this, convert the integer to a string using str(), or ensure both operands are of the same type.`;
-        }
-    }
-    class MissingRequiredPositionalError extends RuntimeSourceError {
-        constructor(node, functionName, params, args) {
-            super(node);
-            this.type = ErrorType.TYPE;
-            this.functionName = functionName;
-            this.missingParamCnt = params.length - args.length;
-            const missingNames = [];
-            for (let i = args.length; i < params.length; i++) {
-                const param = params[i];
-                missingNames.push("\'" + param.name + "\'");
-            }
-            this.missingParamName = this.joinWithCommasAndAnd(missingNames);
-        }
-        explain() {
-            return `TypeError: ${this.functionName}() missing ${this.missingParamCnt} required positional argument: ${this.missingParamName}`;
-        }
-        elaborate() {
-            return `You called ${this.functionName}() without providing the required positional argument ${this.missingParamName}. Make sure to pass all required arguments when calling ${this.functionName}.`;
-        }
-        joinWithCommasAndAnd(names) {
-            if (names.length === 0) {
-                return '';
-            }
-            else if (names.length === 1) {
-                return names[0];
-            }
-            else if (names.length === 2) {
-                return `${names[0]} and ${names[1]}`;
-            }
-            else {
-                const last = names.pop();
-                return `${names.join(', ')} and ${last}`;
-            }
-        }
-    }
-    class TooManyPositionalArgumentsError extends RuntimeSourceError {
-        constructor(node, functionName, params, args) {
-            super(node);
-            this.type = ErrorType.TYPE;
-            this.functionName = functionName;
-            this.expectedCount = params.length;
-            this.givenCount = args.length;
-        }
-        explain() {
-            return `TypeError: ${this.functionName}() takes ${this.expectedCount} positional arguments but ${this.givenCount} were given`;
-        }
-        elaborate() {
-            return `You called ${this.functionName}() with ${this.givenCount} positional arguments, but it only expects ${this.expectedCount}. Make sure to pass the correct number of arguments when calling ${this.functionName}.`;
-        }
-    }
-
-    const isIdentifier = (node) => {
-        return node.name !== undefined;
-    };
-    const setToTrue = (item) => {
-        item.isEnvDependent = true;
-        return item;
-    };
-    const setToFalse = (item) => {
-        item.isEnvDependent = false;
-        return item;
-    };
-    const propertySetter = new Map([
-        // AST Nodes
-        [
-            'Program',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = node.body.some(elem => isEnvDependent(elem));
-                return node;
-            }
-        ],
-        ['Literal', setToFalse],
-        ['ImportDeclaration', setToFalse],
-        ['BreakStatement', setToFalse],
-        ['ContinueStatement', setToFalse],
-        ['DebuggerStatement', setToFalse],
-        ['VariableDeclaration', setToTrue],
-        ['FunctionDeclaration', setToTrue],
-        ['ArrowFunctionExpression', setToTrue],
-        ['Identifier', setToTrue],
-        [
-            'LogicalExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.left) || isEnvDependent(node.right);
-                return node;
-            }
-        ],
-        [
-            'BinaryExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.left) || isEnvDependent(node.right);
-                return node;
-            }
-        ],
-        [
-            'UnaryExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.argument);
-                return node;
-            }
-        ],
-        [
-            'ConditionalExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent =
-                    isEnvDependent(node.consequent) ||
-                        isEnvDependent(node.alternate) ||
-                        isEnvDependent(node.test);
-                return node;
-            }
-        ],
-        [
-            'MemberExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.property) || isEnvDependent(node.object);
-                return node;
-            }
-        ],
-        [
-            'ArrayExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = node.elements.some(elem => isEnvDependent(elem));
-                return node;
-            }
-        ],
-        [
-            'AssignmentExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.left) || isEnvDependent(node.right);
-                return node;
-            }
-        ],
-        [
-            'ReturnStatement',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.argument);
-                return node;
-            }
-        ],
-        [
-            'CallExpression',
-            (item) => {
-                const node = item;
-                node.isEnvDependent =
-                    isEnvDependent(node.callee) || node.arguments.some(arg => isEnvDependent(arg));
-                return node;
-            }
-        ],
-        [
-            'ExpressionStatement',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.expression);
-                return node;
-            }
-        ],
-        [
-            'IfStatement',
-            (item) => {
-                const node = item;
-                node.isEnvDependent =
-                    isEnvDependent(node.test) ||
-                        isEnvDependent(node.consequent) ||
-                        isEnvDependent(node.alternate);
-                return node;
-            }
-        ],
-        [
-            'ForStatement',
-            (item) => {
-                const node = item;
-                node.isEnvDependent =
-                    isEnvDependent(node.body) ||
-                        isEnvDependent(node.init) ||
-                        isEnvDependent(node.test) ||
-                        isEnvDependent(node.update);
-                return node;
-            }
-        ],
-        [
-            'WhileStatement',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = isEnvDependent(node.body) || isEnvDependent(node.test);
-                return node;
-            }
-        ],
-        [
-            'BlockStatement',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = node.body.some(stm => isEnvDependent(stm));
-                return node;
-            }
-        ],
-        [
-            'StatementSequence',
-            (item) => {
-                const node = item;
-                node.isEnvDependent = node.body.some(stm => isEnvDependent(stm));
-                return node;
-            }
-        ],
-        ['ImportSpecifier', setToTrue],
-        ['ImportDefaultSpecifier', setToTrue],
-        // InstrType
-        [InstrType.RESET, setToFalse],
-        [InstrType.UNARY_OP, setToFalse],
-        [InstrType.BINARY_OP, setToFalse],
-        [InstrType.CONTINUE, setToFalse],
-        [InstrType.ASSIGNMENT, setToTrue],
-        [
-            InstrType.WHILE,
-            (item) => {
-                const instr = item;
-                instr.isEnvDependent = isEnvDependent(instr.test) || isEnvDependent(instr.body);
-                return instr;
-            }
-        ],
-        [
-            InstrType.FOR,
-            (item) => {
-                const instr = item;
-                instr.isEnvDependent =
-                    isEnvDependent(instr.init) ||
-                        isEnvDependent(instr.test) ||
-                        isEnvDependent(instr.update) ||
-                        isEnvDependent(instr.body);
-                return instr;
-            }
-        ],
-        [
-            InstrType.BRANCH,
-            (item) => {
-                const instr = item;
-                instr.isEnvDependent = isEnvDependent(instr.consequent) || isEnvDependent(instr.alternate);
-                return instr;
-            }
-        ]
-    ]);
-    /**
-     * Checks whether the evaluation of the given control item depends on the current environment.
-     * The item is also considered environment dependent if its evaluation introduces
-     * environment dependent items
-     * @param item The control item to be checked
-     * @return `true` if the item is environment depedent, else `false`.
-     */
-    function isEnvDependent(item) {
-        var _a, _b;
-        if (item === null || item === undefined) {
-            return false;
-        }
-        // If result is already calculated, return it
-        if (item.isEnvDependent !== undefined) {
-            return item.isEnvDependent;
-        }
-        let setter;
-        if (isNode$1(item)) {
-            setter = propertySetter.get(item.type);
-        }
-        else if (isInstr(item)) {
-            setter = propertySetter.get(item.instrType);
-        }
-        if (setter) {
-            return (_b = (_a = setter(item)) === null || _a === void 0 ? void 0 : _a.isEnvDependent) !== null && _b !== void 0 ? _b : false;
-        }
-        return false;
-    }
-    // function isInstr(item: ControlItem): item is Instr & { isEnvDependent?: boolean } {
-    //   return (item as Instr).instrType !== undefined;
-    // }
-    // export const envChanging = (command: ControlItem): boolean => {
-    //   if (isNode(command)) {
-    //     const type = command.type
-    //     return (
-    //       type === 'Program' ||
-    //       type === 'BlockStatement' ||
-    //       type === 'ArrowFunctionExpression' ||
-    //       (type === 'ExpressionStatement' && command.expression.type === 'ArrowFunctionExpression')
-    //     )
-    //   } else {
-    //     const type = command.instrType
-    //     return (
-    //       type === InstrType.ENVIRONMENT ||
-    //       type === InstrType.ARRAY_LITERAL ||
-    //       type === InstrType.ASSIGNMENT ||
-    //       type === InstrType.ARRAY_ASSIGNMENT ||
-    //       (type === InstrType.APPLICATION && (command as AppInstr).numOfArgs > 0)
-    //     )
-    //   }
-    // }
-    const envChanging = (command) => {
-        if (isNode$1(command)) {
-            const type = command.type;
-            return (type === 'Program' ||
-                type === 'BlockStatement' ||
-                type === 'ArrowFunctionExpression' ||
-                (type === 'ExpressionStatement' && command.expression.type === 'ArrowFunctionExpression'));
-        }
-        else if (isInstr(command)) {
-            command.instrType;
-            return (false);
-        }
-        else {
-            return false;
-        }
-    };
-    function declareFunctionsAndVariables(context, node, environment) {
-        for (const statement of node.body) {
-            switch (statement.type) {
-                case 'VariableDeclaration':
-                    declareVariables(context, statement, environment);
-                    break;
-                case 'FunctionDeclaration':
-                    // FunctionDeclaration is always of type constant
-                    declareIdentifier(context, statement.id.name, statement, environment, true);
-                    break;
-            }
-        }
-    }
-    function declareVariables(context, node, environment) {
-        for (const declaration of node.declarations) {
-            // Retrieve declaration type from node
-            const constant = node.kind === 'const';
-            declareIdentifier(context, declaration.id.name, node, environment, constant);
-        }
-    }
-    function declareIdentifier(context, name, node, environment, constant = false) {
-        if (environment.head.hasOwnProperty(name)) {
-            Object.getOwnPropertyDescriptors(environment.head);
-            // return handleRuntimeError(
-            //   context,
-            //   new errors.VariableRedeclaration(node, name, descriptors[name].writable)
-            // )
-        }
-        //environment.head[name] = constant ? UNASSIGNED_CONST : UNASSIGNED_LET
-        environment.head[name] = 'declaration';
-        return environment;
-    }
-    const handleSequence = (seq) => {
-        const result = [];
-        let valueProduced = false;
-        for (const command of seq) {
-            //if (!isImportDeclaration(command)) {
-            if (valueProducing(command)) {
-                // Value producing statements have an extra pop instruction
-                if (valueProduced) {
-                    result.push(popInstr(command));
-                }
-                else {
-                    valueProduced = true;
-                }
-            }
-            result.push(command);
-            //}
-        }
-        // Push statements in reverse order
-        return result.reverse();
-    };
-    const valueProducing = (command) => {
-        const type = command.type;
-        return (type !== 'VariableDeclaration' &&
-            type !== 'FunctionDeclaration' &&
-            type !== 'ContinueStatement' &&
-            type !== 'BreakStatement' &&
-            type !== 'DebuggerStatement' &&
-            (type !== 'BlockStatement' || command.body.some(valueProducing)));
-    };
-    function defineVariable(context, name, value, constant = false, node) {
-        const environment = currentEnvironment(context);
-        if (environment.head[name] !== 'declaration') ;
-        if (constant && value instanceof Closure) {
-            value.declaredName = name;
-        }
-        Object.defineProperty(environment.head, name, {
-            value,
-            writable: !constant,
-            enumerable: true
-        });
-        return environment;
-    }
-    const getVariable = (context, name, node) => {
-        let environment = currentEnvironment(context);
-        while (environment) {
-            if (environment.head.hasOwnProperty(name)) {
-                if (environment.head[name] === 'declaration') ;
-                else {
-                    return environment.head[name];
-                }
-            }
-            else {
-                environment = environment.tail;
-            }
-        }
-        //return handleRuntimeError(context, new errors.UndefinedVariable(name, node))
-    };
-    const checkNumberOfArguments = (command, context, callee, args, exp) => {
-        if (callee instanceof Closure) {
-            // User-defined or Pre-defined functions
-            const params = callee.node.params;
-            // console.info("params: ", params);
-            // console.info("args: ", args);
-            //const hasVarArgs = params[params.length - 1]?.type === 'RestElement'
-            if (params.length > args.length) {
-                handleRuntimeError(context, new MissingRequiredPositionalError(command, callee.declaredName, params, args));
-            }
-            else if (params.length !== args.length) {
-                handleRuntimeError(context, new TooManyPositionalArgumentsError(command, callee.declaredName, params, args));
-            }
-            //}
-            // if (hasVarArgs ? params.length - 1 > args.length : params.length !== args.length) {
-            //   // error
-            //   // return handleRuntimeError(
-            //   //   context,
-            //   //   new errors.InvalidNumberOfArguments(
-            //   //     exp,
-            //   //     hasVarArgs ? params.length - 1 : params.length,
-            //   //     args.length,
-            //   //     hasVarArgs
-            //   //   )
-            //   // )
-            // }
-        }
-        else {
-            // Pre-built functions
-            const hasVarArgs = callee.minArgsNeeded != undefined;
-            if (hasVarArgs ? callee.minArgsNeeded > args.length : callee.length !== args.length) ;
-        }
-        return undefined;
-    };
-    const isInstr = (command) => {
-        return command.instrType !== undefined;
-    };
-    const isSimpleFunction = (node) => {
-        if (node.body.type !== 'BlockStatement' && node.body.type !== 'StatementSequence') {
-            return true;
-        }
-        else {
-            const block = node.body;
-            return block.body.length === 1 && block.body[0].type === 'ReturnStatement';
-        }
-    };
-    const reduceConditional = (node) => {
-        return [branchInstr(node.consequent, node.alternate, node), node.test];
-    };
-    const handleRuntimeError = (context, error) => {
-        context.errors.push(error);
-        console.error(error.explain());
-        console.error(error.elaborate());
-        //console.log("Location:", `Line ${e.location.start.line}, Column ${e.location.start.column}`);
-        throw error;
-    };
-    function pythonMod(a, b) {
-        const mod = a % b;
-        if ((mod >= 0 && b > 0) || (mod <= 0 && b < 0)) {
-            return mod;
-        }
-        else {
-            return mod + b;
-        }
-    }
-    function hasImportDeclarations(node) {
-        for (const statement of node.body) {
-            if (statement.type === 'ImportDeclaration') {
-                return true;
-            }
-        }
-        return false;
-    }
-    const isImportDeclaration = (node) => node.type === 'ImportDeclaration';
-    function getModuleDeclarationSource(node) {
-        var _a, _b;
-        assert(typeof ((_a = node.source) === null || _a === void 0 ? void 0 : _a.value) === 'string', `Expected ${node.type} to have a source value of type string, got ${(_b = node.source) === null || _b === void 0 ? void 0 : _b.value}`);
-        return node.source.value;
-    }
-    class AssertionError extends RuntimeSourceError {
-        constructor(message) {
-            super();
-            this.message = message;
-        }
-        explain() {
-            return this.message;
-        }
-        elaborate() {
-            return 'Please contact the administrators to let them know that this error has occurred';
-        }
-    }
-    function assert(condition, message) {
-        if (!condition) {
-            throw new AssertionError(message);
-        }
-    }
-
-    class Control extends Stack {
-        constructor(program) {
-            super();
-            this.numEnvDependentItems = 0;
-            // Load program into control stack
-            program ? this.push(program) : null;
-        }
-        canAvoidEnvInstr() {
-            return this.numEnvDependentItems === 0;
-        }
-        // For testing purposes
-        getNumEnvDependentItems() {
-            return this.numEnvDependentItems;
-        }
-        pop() {
-            const item = super.pop();
-            if (item !== undefined && isEnvDependent(item)) {
-                this.numEnvDependentItems--;
-            }
-            return item;
-        }
-        push(...items) {
-            const itemsNew = Control.simplifyBlocksWithoutDeclarations(...items);
-            itemsNew.forEach((item) => {
-                if (isEnvDependent(item)) {
-                    this.numEnvDependentItems++;
-                }
-            });
-            super.push(...itemsNew);
-        }
-        /**
-         * Before pushing block statements on the control stack, we check if the block statement has any declarations.
-         * If not, the block is converted to a StatementSequence.
-         * @param items The items being pushed on the control.
-         * @returns The same set of control items, but with block statements without declarations converted to StatementSequences.
-         * NOTE: this function handles any case where StatementSequence has to be converted back into BlockStatement due to type issues
-         */
-        static simplifyBlocksWithoutDeclarations(...items) {
-            const itemsNew = [];
-            items.forEach(item => {
-                if (isNode$1(item) && isBlockStatement(item) && !hasDeclarations(item)) {
-                    // Push block body as statement sequence
-                    const seq = statementSequence(item.body, item.loc);
-                    itemsNew.push(seq);
-                }
-                else {
-                    itemsNew.push(item);
-                }
-            });
-            return itemsNew;
-        }
-        copy() {
-            const newControl = new Control();
-            const stackCopy = super.getStack();
-            newControl.push(...stackCopy);
-            return newControl;
-        }
-    }
-
-    class Stash extends Stack {
-        constructor() {
-            super();
-        }
-        copy() {
-            const newStash = new Stash();
-            const stackCopy = super.getStack();
-            newStash.push(...stackCopy);
-            return newStash;
-        }
-    }
-
-    // export function evaluateBinaryExpression(operator: BinaryOperator, left: any, right: any) {
-    //     switch (operator) {
-    //       case '+':
-    //         return left + right
-    //       case '-':
-    //         return left - right
-    //       case '*':
-    //         return left * right
-    //       case '/':
-    //         return left / right
-    //       case '%':
-    //         return left % right
-    //       case '===':
-    //         return left === right
-    //       case '!==':
-    //         return left !== right
-    //       case '<=':
-    //         return left <= right
-    //       case '<':
-    //         return left < right
-    //       case '>':
-    //         return left > right
-    //       case '>=':
-    //         return left >= right
-    //       default:
-    //         return undefined
-    //     }
-    //   }
-    function evaluateUnaryExpression(operator, value) {
-        if (operator === '!') {
-            if (value.type === 'bool') {
-                return {
-                    type: 'bool',
-                    value: !(Boolean(value.value))
-                };
-            }
-        }
-        else if (operator === '-') {
-            if (value.type === 'bigint') {
-                return {
-                    type: 'bigint',
-                    value: -value.value
-                };
-            }
-            else if (value.type === 'number') {
-                return {
-                    type: 'number',
-                    value: -Number(value.value)
-                };
-            }
-            else ;
-            // else if (value.type === 'bool') {
-            //     return {
-            //         type: 'bigint',
-            //         value: Boolean(value.value)?BigInt(-1):BigInt(0)
-            //     };
-            // }
-        }
-        else if (operator === 'typeof') {
-            // todo
-            return {
-                type: String,
-                value: typeof value.value
-            };
-        }
-        else {
-            return value;
-        }
-    }
-    function evaluateBinaryExpression(context, identifier, left, right) {
-        //if(isIdentifier(identifier)){
-        //if(identifier.name === '__py_adder') {
-        if (left.type === 'string' && right.type === 'string' && identifier.name === '__py_adder') {
-            if (isIdentifier(identifier) && identifier.name === '__py_adder') {
-                return {
-                    type: 'string',
-                    value: left.value + right.value
-                };
-            }
-            else {
-                let ret_value;
-                if (identifier === '>') {
-                    ret_value = left.value > right.value;
-                }
-                else if (identifier === '>=') {
-                    ret_value = left.value >= right.value;
-                }
-                else if (identifier === '<') {
-                    ret_value = left.value < right.value;
-                }
-                else if (identifier === '<=') {
-                    ret_value = left.value <= right.value;
-                }
-                else if (identifier === '===') {
-                    ret_value = left.value === right.value;
-                }
-                else if (identifier === '!==') {
-                    ret_value = left.value !== right.value;
-                }
-                else ;
-                return {
-                    type: 'bool',
-                    value: ret_value
-                };
-            }
-        }
-        else {
-            // numbers: only int and float, not bool
-            const numericTypes = ['number', 'bigint', 'complex']; //, 'bool'
-            if (!numericTypes.includes(left.type) || !numericTypes.includes(right.type)) ;
-            // if (left.type === 'bool') {
-            //     left.type = 'bigint';
-            //     left.value = left.value?BigInt(1):BigInt(0);
-            // }
-            // if (right.type === 'bool') {
-            //     right.type = 'bigint';
-            //     right.value = right.value?BigInt(1):BigInt(0);
-            // }
-            let originalLeft = { type: left.type, value: left.value };
-            let originalRight = { type: right.type, value: right.value };
-            if (left.type !== right.type) {
-                // left.type = 'number';
-                // left.value = Number(left.value);
-                // right.type = 'number';
-                // right.value = Number(right.value);
-                if (left.type === 'complex' || right.type === 'complex') {
-                    left.type = 'complex';
-                    right.type = 'complex';
-                    left.value = PyComplexNumber.fromValue(left.value);
-                    right.value = PyComplexNumber.fromValue(right.value);
-                }
-                else if (left.type === 'number' || right.type === 'number') {
-                    left.type = 'number';
-                    right.type = 'number';
-                    left.value = Number(left.value);
-                    right.value = Number(right.value);
-                }
-            }
-            let ret_value;
-            let ret_type = left.type;
-            if (isIdentifier(identifier)) {
-                if (identifier.name === '__py_adder') {
-                    if (left.type === 'complex' || right.type === 'complex') {
-                        const leftComplex = PyComplexNumber.fromValue(left.value);
-                        const rightComplex = PyComplexNumber.fromValue(right.value);
-                        ret_value = leftComplex.add(rightComplex);
-                    }
-                    else {
-                        ret_value = left.value + right.value;
-                    }
-                }
-                else if (identifier.name === '__py_minuser') {
-                    if (left.type === 'complex' || right.type === 'complex') {
-                        const leftComplex = PyComplexNumber.fromValue(left.value);
-                        const rightComplex = PyComplexNumber.fromValue(right.value);
-                        ret_value = leftComplex.sub(rightComplex);
-                    }
-                    else {
-                        ret_value = left.value - right.value;
-                    }
-                }
-                else if (identifier.name === '__py_multiplier') {
-                    if (left.type === 'complex' || right.type === 'complex') {
-                        const leftComplex = PyComplexNumber.fromValue(left.value);
-                        const rightComplex = PyComplexNumber.fromValue(right.value);
-                        ret_value = leftComplex.mul(rightComplex);
-                    }
-                    else {
-                        ret_value = left.value * right.value;
-                    }
-                }
-                else if (identifier.name === '__py_divider') {
-                    if (left.type === 'complex' || right.type === 'complex') {
-                        const leftComplex = PyComplexNumber.fromValue(left.value);
-                        const rightComplex = PyComplexNumber.fromValue(right.value);
-                        ret_value = leftComplex.div(rightComplex);
-                    }
-                    else {
-                        if (right.value !== 0) {
-                            ret_type = 'number';
-                            ret_value = Number(left.value) / Number(right.value);
-                        }
-                    }
-                }
-                else if (identifier.name === '__py_modder') {
-                    if (left.type === 'complex') ;
-                    ret_value = pythonMod(left.value, right.value);
-                }
-                else if (identifier.name === '__py_floorer') {
-                    // TODO: floorer not in python now
-                    ret_value = 0;
-                }
-                else if (identifier.name === '__py_powerer') {
-                    if (left.type === 'complex') {
-                        const leftComplex = PyComplexNumber.fromValue(left.value);
-                        const rightComplex = PyComplexNumber.fromValue(right.value);
-                        ret_value = leftComplex.pow(rightComplex);
-                    }
-                    else {
-                        if (left.type === 'bigint' && right.value < 0) {
-                            ret_value = Number(left.value) ** Number(right.value);
-                            ret_type = 'number';
-                        }
-                        else {
-                            ret_value = left.value ** right.value;
-                        }
-                    }
-                }
-                else ;
-            }
-            else {
-                ret_type = 'bool';
-                // one of them is complex, convert all to complex then compare
-                // for complex, only '==' and '!=' valid
-                if (left.type === 'complex') {
-                    const leftComplex = PyComplexNumber.fromValue(left.value);
-                    const rightComplex = PyComplexNumber.fromValue(right.value);
-                    if (identifier === '===') {
-                        ret_value = leftComplex.equals(rightComplex);
-                    }
-                    else if (identifier === '!==') {
-                        ret_value = !leftComplex.equals(rightComplex);
-                    }
-                    else ;
-                }
-                else if (originalLeft.type !== originalRight.type) {
-                    let int_num;
-                    let floatNum;
-                    let compare_res;
-                    if (originalLeft.type === 'bigint') {
-                        int_num = originalLeft;
-                        floatNum = originalRight;
-                        compare_res = pyCompare(int_num, floatNum);
-                    }
-                    else {
-                        int_num = originalRight;
-                        floatNum = originalLeft;
-                        compare_res = -pyCompare(int_num, floatNum);
-                    }
-                    if (identifier === '>') {
-                        ret_value = compare_res > 0;
-                    }
-                    else if (identifier === '>=') {
-                        ret_value = compare_res >= 0;
-                    }
-                    else if (identifier === '<') {
-                        ret_value = compare_res < 0;
-                    }
-                    else if (identifier === '<=') {
-                        ret_value = compare_res <= 0;
-                    }
-                    else if (identifier === '===') {
-                        ret_value = compare_res === 0;
-                    }
-                    else if (identifier === '!==') {
-                        ret_value = compare_res !== 0;
-                    }
-                    else ;
-                }
-                else {
-                    if (identifier === '>') {
-                        ret_value = left.value > right.value;
-                    }
-                    else if (identifier === '>=') {
-                        ret_value = left.value >= right.value;
-                    }
-                    else if (identifier === '<') {
-                        ret_value = left.value < right.value;
-                    }
-                    else if (identifier === '<=') {
-                        ret_value = left.value <= right.value;
-                    }
-                    else if (identifier === '===') {
-                        ret_value = left.value === right.value;
-                    }
-                    else if (identifier === '!==') {
-                        ret_value = left.value !== right.value;
-                    }
-                    else ;
-                }
-            }
-            return {
-                type: ret_type,
-                value: ret_value
-            };
-        }
-    }
-    function pyCompare(int_num, float_num) {
-        // int_num.value < float_num.value => -1
-        // int_num.value = float_num.value => 0
-        // int_num.value > float_num.value => 1
-        // If float_num is positive Infinity, then int_num is considered smaller.
-        if (float_num.value === Infinity) {
-            return -1;
-        }
-        if (float_num.value === -Infinity) {
-            return 1;
-        }
-        const signInt = (int_num.value < 0) ? -1 : (int_num.value > 0 ? 1 : 0);
-        const signFlt = Math.sign(float_num.value); // -1, 0, or 1
-        if (signInt < signFlt)
-            return -1; // e.g. int<0, float>=0 => int < float
-        if (signInt > signFlt)
-            return 1; // e.g. int>=0, float<0 => int > float
-        // Both have the same sign (including 0).
-        // If both are zero, treat them as equal.
-        if (signInt === 0 && signFlt === 0) {
-            return 0;
-        }
-        // Both are either positive or negative.
-        // If |int_num.value| is within 2^53, it can be safely converted to a JS number for an exact comparison.
-        const absInt = int_num.value < 0 ? -int_num.value : int_num.value;
-        const MAX_SAFE = 9007199254740991; // 2^53 - 1
-        if (absInt <= MAX_SAFE) {
-            // Safe conversion to double.
-            const intAsNum = Number(int_num.value);
-            const diff = intAsNum - float_num.value;
-            if (diff === 0)
-                return 0;
-            return diff < 0 ? -1 : 1;
-        }
-        // For large integers exceeding 2^53, we need to distinguish more carefully.
-        // General idea: Determine the order of magnitude of float_num.value (via log10) and compare it with
-        // the number of digits of int_num.value. An approximate comparison can indicate whether
-        // int_num.value is greater or less than float_num.value.
-        // First, check if float_num.value is nearly zero (but not zero).
-        if (float_num.value === 0) {
-            // Although signFlt would be 0 and handled above, just to be safe:
-            return signInt;
-        }
-        const absFlt = Math.abs(float_num.value);
-        // Determine the order of magnitude.
-        const exponent = Math.floor(Math.log10(absFlt));
-        // For example, if float_num.value = 3.333333e49, exponent = 49, indicating roughly 50 digits in its integer part.
-        // Get the decimal string representation of the absolute integer.
-        const intStr = absInt.toString();
-        const intDigits = intStr.length;
-        // If exponent + 1 is less than intDigits, then |int_num.value| has more digits
-        // and is larger (if positive) or smaller (if negative) than float_num.value.
-        // Conversely, if exponent + 1 is greater than intDigits, int_num.value has fewer digits.
-        const integerPartLen = exponent + 1;
-        if (integerPartLen < intDigits) {
-            // length of int_num.value is larger => all positive => int_num.value > float_num.value
-            //                => all negative => int_num.value < float_num.value
-            return (signInt > 0) ? 1 : -1;
-        }
-        else if (integerPartLen > intDigits) {
-            // length of int_num.value is smaller => all positive => int_num.value < float_num.value
-            //                => all negative => int_num.value > float_num.value
-            return (signInt > 0) ? -1 : 1;
-        }
-        else {
-            // (5.2) If the number of digits is the same, they may be extremely close.
-            // Method: Convert float_num.value into an approximate BigInt string and perform a lexicographical comparison.
-            const floatApproxStr = approximateBigIntString(absFlt, 30);
-            const aTrim = intStr.replace(/^0+/, '');
-            const bTrim = floatApproxStr.replace(/^0+/, '');
-            // If lengths differ after trimming, the one with more digits is larger.
-            if (aTrim.length > bTrim.length) {
-                return (signInt > 0) ? 1 : -1;
-            }
-            else if (aTrim.length < bTrim.length) {
-                return (signInt > 0) ? -1 : 1;
-            }
-            else {
-                // Same length: use lexicographical comparison.
-                const cmp = aTrim.localeCompare(bTrim);
-                if (cmp === 0) {
-                    return 0;
-                }
-                // cmp>0 => aTrim > bTrim => aVal > bVal
-                return (cmp > 0) ? (signInt > 0 ? 1 : -1)
-                    : (signInt > 0 ? -1 : 1);
-            }
-        }
-    }
-    function approximateBigIntString(num, precision) {
-        // Use scientific notation to obtain a string in the form "3.333333333333333e+49"
-        const s = num.toExponential(precision);
-        // Split into mantissa and exponent parts.
-        // The regular expression matches strings of the form: /^([\d.]+)e([+\-]\d+)$/
-        const match = s.match(/^([\d.]+)e([+\-]\d+)$/);
-        if (!match) {
-            // For extremely small or extremely large numbers, toExponential() should follow this format.
-            // As a fallback, return Math.floor(num).toString()
-            return Math.floor(num).toString();
-        }
-        let mantissaStr = match[1]; // "3.3333333333..."
-        const exp = parseInt(match[2], 10); // e.g. +49
-        // Remove the decimal point
-        mantissaStr = mantissaStr.replace('.', '');
-        // Get the current length of the mantissa string
-        const len = mantissaStr.length;
-        // Calculate the required integer length: for exp ≥ 0, we want the integer part
-        // to have (1 + exp) digits.
-        const integerLen = 1 + exp;
-        if (integerLen <= 0) {
-            // This indicates num < 1 (e.g., exponent = -1, mantissa = "3" results in 0.xxx)
-            // For big integer comparison, such a number is very small, so simply return "0"
-            return "0";
-        }
-        if (len < integerLen) {
-            // The mantissa is not long enough; pad with zeros at the end.
-            return mantissaStr.padEnd(integerLen, '0');
-        }
-        // If the mantissa is too long, truncate it (this is equivalent to taking the floor).
-        // Rounding could be applied if necessary, but truncation is sufficient for comparison.
-        return mantissaStr.slice(0, integerLen);
-    }
-
     function _extends() {
       return _extends = Object.assign ? Object.assign.bind() : function (n) {
         for (var e = 1; e < arguments.length; e++) {
@@ -5248,7 +1601,7 @@
     function isIndexNode(x) {
       return x && x.isIndexNode === true && x.constructor.prototype.isNode === true || false;
     }
-    function isNode(x) {
+    function isNode$1(x) {
       return x && x.isNode === true && x.constructor.prototype.isNode === true || false;
     }
     function isObjectNode(x) {
@@ -8164,7 +4517,7 @@
         test: isIndexNode
       }, {
         name: 'Node',
-        test: isNode
+        test: isNode$1
       }, {
         name: 'ObjectNode',
         test: isObjectNode
@@ -12882,7 +9235,7 @@
       Decimal.log2 = log2;          // ES6
       Decimal.max = max$1;
       Decimal.min = min$1;
-      Decimal.mod = mod;
+      Decimal.mod = mod$1;
       Decimal.mul = mul;
       Decimal.pow = pow$1;
       Decimal.random = random;
@@ -13072,7 +9425,7 @@
      * y {number|string|bigint|Decimal}
      *
      */
-    function mod(x, y) {
+    function mod$1(x, y) {
       return new this(x).mod(y);
     }
 
@@ -22698,6 +19051,35 @@
       }
     });
 
+    function getDefaultExportFromCjs (x) {
+    	return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, 'default') ? x['default'] : x;
+    }
+
+    function getAugmentedNamespace(n) {
+      if (Object.prototype.hasOwnProperty.call(n, '__esModule')) return n;
+      var f = n.default;
+    	if (typeof f == "function") {
+    		var a = function a () {
+    			if (this instanceof a) {
+            return Reflect.construct(f, arguments, this.constructor);
+    			}
+    			return f.apply(this, arguments);
+    		};
+    		a.prototype = f.prototype;
+      } else a = {};
+      Object.defineProperty(a, '__esModule', {value: true});
+    	Object.keys(n).forEach(function (k) {
+    		var d = Object.getOwnPropertyDescriptor(n, k);
+    		Object.defineProperty(a, k, d.get ? d : {
+    			enumerable: true,
+    			get: function () {
+    				return n[k];
+    			}
+    		});
+    	});
+    	return a;
+    }
+
     var name$4 = 'dot';
     var dependencies$4 = ['typed', 'addScalar', 'multiplyScalar', 'conj', 'size'];
     var createDot = /* #__PURE__ */factory(name$4, dependencies$4, _ref => {
@@ -23572,6 +19954,2318 @@
       pow,
       typed
     });
+
+    class Stack {
+        constructor() {
+            // Bottom of the array is at index 0
+            this.storage = [];
+        }
+        push(...items) {
+            for (const item of items) {
+                this.storage.push(item);
+            }
+        }
+        pop() {
+            return this.storage.pop();
+        }
+        peek() {
+            if (this.isEmpty()) {
+                return undefined;
+            }
+            return this.storage[this.size() - 1];
+        }
+        size() {
+            return this.storage.length;
+        }
+        isEmpty() {
+            return this.size() == 0;
+        }
+        getStack() {
+            // return a copy of the stack's contents
+            return [...this.storage];
+        }
+        some(predicate) {
+            return this.storage.some(predicate);
+        }
+        // required for first-class continuations,
+        // which directly mutate this stack globally.
+        setTo(otherStack) {
+            this.storage = otherStack.storage;
+        }
+    }
+
+    /**
+     * Create a StatementSequence node.
+     */
+    const statementSequence = (body, loc) => ({
+        type: 'StatementSequence',
+        body,
+        loc,
+        innerComments: undefined,
+    });
+    const isNode = (item) => {
+        return typeof item === 'object' && item !== null && 'type' in item;
+    };
+    const isBlockStatement = (node) => {
+        return node.type === 'BlockStatement';
+    };
+    const hasDeclarations = (node) => {
+        return node.body.some(stmt => stmt.type === 'VariableDeclaration' || stmt.type === 'FunctionDeclaration');
+    };
+    const blockArrowFunction = (params, body, loc) => ({
+        type: 'ArrowFunctionExpression',
+        expression: false,
+        generator: false,
+        params,
+        body: Array.isArray(body) ? blockStatement(body) : body,
+        loc
+    });
+    const blockStatement = (body, loc) => ({
+        type: 'BlockStatement',
+        body,
+        loc
+    });
+    const constantDeclaration = (name, init, loc) => declaration(name, 'declaration', init, loc);
+    const declaration = (name, kind, init, loc) => ({
+        type: 'VariableDeclaration',
+        declarations: [
+            {
+                type: 'VariableDeclarator',
+                id: identifier(name),
+                init
+            }
+        ],
+        kind: 'declaration',
+        loc
+    });
+    const identifier = (name, loc) => ({
+        type: 'Identifier',
+        name,
+        loc
+    });
+    const returnStatement = (argument, loc) => ({
+        type: 'ReturnStatement',
+        argument,
+        loc
+    });
+    const hasReturnStatement = (block) => {
+        let hasReturn = false;
+        for (const statement of block.body) {
+            if (isReturnStatement(statement)) {
+                hasReturn = true;
+            }
+            else if (isIfStatement(statement)) {
+                // Parser enforces that if/else have braces (block statement)
+                hasReturn = hasReturn || hasReturnStatementIf(statement);
+            }
+            else if (isBlockStatement(statement) || isStatementSequence$1(statement)) {
+                hasReturn = hasReturn && hasReturnStatement(statement);
+            }
+        }
+        return hasReturn;
+    };
+    const isReturnStatement = (node) => {
+        return node.type == 'ReturnStatement';
+    };
+    const isIfStatement = (node) => {
+        return node.type == 'IfStatement';
+    };
+    const hasReturnStatementIf = (statement) => {
+        let hasReturn = true;
+        // Parser enforces that if/else have braces (block statement)
+        hasReturn = hasReturn && hasReturnStatement(statement.consequent);
+        if (statement.alternate) {
+            if (isIfStatement(statement.alternate)) {
+                hasReturn = hasReturn && hasReturnStatementIf(statement.alternate);
+            }
+            else if (isBlockStatement(statement.alternate) || isStatementSequence$1(statement.alternate)) {
+                hasReturn = hasReturn && hasReturnStatement(statement.alternate);
+            }
+        }
+        return hasReturn;
+    };
+    const isStatementSequence$1 = (node) => {
+        return node.type == 'StatementSequence';
+    };
+    const literal = (value, loc) => ({
+        type: 'Literal',
+        value,
+        loc
+    });
+
+    /**
+     * The heap stores all objects in each environment.
+     */
+    class Heap {
+        constructor() {
+            this.storage = null;
+        }
+        add(...items) {
+            var _a;
+            (_a = this.storage) !== null && _a !== void 0 ? _a : (this.storage = new Set());
+            for (const item of items) {
+                this.storage.add(item);
+            }
+        }
+        /** Checks the existence of `item` in the heap. */
+        contains(item) {
+            var _a, _b;
+            return (_b = (_a = this.storage) === null || _a === void 0 ? void 0 : _a.has(item)) !== null && _b !== void 0 ? _b : false;
+        }
+        /** Gets the number of items in the heap. */
+        size() {
+            var _a, _b;
+            return (_b = (_a = this.storage) === null || _a === void 0 ? void 0 : _a.size) !== null && _b !== void 0 ? _b : 0;
+        }
+        /**
+         * Removes `item` from current heap and adds it to `otherHeap`.
+         * If the current heap does not contain `item`, nothing happens.
+         * @returns whether the item transfer is successful
+         */
+        move(item, otherHeap) {
+            if (!this.contains(item))
+                return false;
+            this.storage.delete(item);
+            otherHeap.add(item);
+            return true;
+        }
+        /** Returns a copy of the heap's contents. */
+        getHeap() {
+            return new Set(this.storage);
+        }
+    }
+
+    const uniqueId = (context) => {
+        return `${context.runtime.objectCount++}`;
+    };
+    const createEnvironment = (context, closure, args, callExpression) => {
+        const environment = {
+            // TODO: name
+            name: '',
+            tail: closure.environment,
+            head: {},
+            heap: new Heap(),
+            id: uniqueId(context),
+            callExpression: Object.assign({}, callExpression)
+        };
+        // console.info('closure.node.params:', closure.node.params);
+        // console.info('Number of params:', closure.node.params.length);
+        closure.node.params.forEach((param, index) => {
+            if (isRestElement(param)) {
+                const array = args.slice(index);
+                handleArrayCreation(context, array, environment);
+                environment.head[param.argument.name] = array;
+            }
+            else {
+                environment.head[param.name] = args[index];
+            }
+        });
+        return environment;
+    };
+    const createSimpleEnvironment = (context, name, tail = null) => {
+        return {
+            id: uniqueId(context),
+            name,
+            tail,
+            head: {},
+            heap: new Heap(),
+            // callExpression 和 thisContext 可选，根据需要传递
+        };
+    };
+    const createProgramEnvironment = (context, isPrelude) => {
+        return createSimpleEnvironment(context, isPrelude ? 'prelude' : 'programEnvironment');
+    };
+    const createBlockEnvironment = (context, name = 'blockEnvironment') => {
+        return {
+            name,
+            tail: currentEnvironment(context),
+            head: {},
+            heap: new Heap(),
+            id: uniqueId(context)
+        };
+    };
+    const isRestElement = (node) => {
+        return node.type === 'RestElement';
+    };
+    const handleArrayCreation = (context, array, envOverride) => {
+        const environment = envOverride !== null && envOverride !== void 0 ? envOverride : currentEnvironment(context);
+        Object.defineProperties(array, {
+            id: { value: uniqueId(context) },
+            environment: { value: environment, writable: true }
+        });
+        environment.heap.add(array); // 假设 heap.add 已定义
+    };
+    const currentEnvironment = (context) => {
+        return context.runtime.environments[0];
+    };
+    const popEnvironment = (context) => context.runtime.environments.shift();
+    const pushEnvironment = (context, environment) => {
+        context.runtime.environments.unshift(environment);
+        context.runtime.environmentTree.insert(environment);
+    };
+
+    var InstrType;
+    (function (InstrType) {
+        InstrType["RESET"] = "Reset";
+        InstrType["WHILE"] = "While";
+        InstrType["FOR"] = "For";
+        InstrType["ASSIGNMENT"] = "Assignment";
+        InstrType["ANN_ASSIGNMENT"] = "AnnAssignment";
+        InstrType["APPLICATION"] = "Application";
+        InstrType["UNARY_OP"] = "UnaryOperation";
+        InstrType["BINARY_OP"] = "BinaryOperation";
+        InstrType["BOOL_OP"] = "BoolOperation";
+        InstrType["COMPARE"] = "Compare";
+        InstrType["CALL"] = "Call";
+        InstrType["RETURN"] = "Return";
+        InstrType["BREAK"] = "Break";
+        InstrType["CONTINUE"] = "Continue";
+        InstrType["IF"] = "If";
+        InstrType["FUNCTION_DEF"] = "FunctionDef";
+        InstrType["LAMBDA"] = "Lambda";
+        InstrType["MULTI_LAMBDA"] = "MultiLambda";
+        InstrType["GROUPING"] = "Grouping";
+        InstrType["LITERAL"] = "Literal";
+        InstrType["VARIABLE"] = "Variable";
+        InstrType["TERNARY"] = "Ternary";
+        InstrType["PASS"] = "Pass";
+        InstrType["ASSERT"] = "Assert";
+        InstrType["IMPORT"] = "Import";
+        InstrType["GLOBAL"] = "Global";
+        InstrType["NONLOCAL"] = "NonLocal";
+        InstrType["Program"] = "Program";
+        InstrType["BRANCH"] = "Branch";
+        InstrType["POP"] = "Pop";
+        InstrType["ENVIRONMENT"] = "environment";
+        InstrType["MARKER"] = "marker";
+    })(InstrType || (InstrType = {}));
+
+    const popInstr = (srcNode) => ({ instrType: InstrType.POP, srcNode });
+    const assmtInstr = (symbol, constant, declaration, srcNode) => ({
+        instrType: InstrType.ASSIGNMENT,
+        symbol,
+        constant,
+        declaration,
+        srcNode
+    });
+    const appInstr = (numOfArgs, srcNode) => ({
+        instrType: InstrType.APPLICATION,
+        numOfArgs,
+        srcNode
+    });
+    const envInstr = (env, srcNode) => ({
+        instrType: InstrType.ENVIRONMENT,
+        env,
+        srcNode
+    });
+    const markerInstr = (srcNode) => ({
+        instrType: InstrType.MARKER,
+        srcNode
+    });
+    const binOpInstr = (symbol, srcNode) => ({
+        instrType: InstrType.BINARY_OP,
+        symbol,
+        srcNode
+    });
+    const resetInstr = (srcNode) => ({
+        instrType: InstrType.RESET,
+        srcNode
+    });
+    const branchInstr = (consequent, alternate, srcNode) => ({
+        instrType: InstrType.BRANCH,
+        consequent,
+        alternate,
+        srcNode
+    });
+    const conditionalExpression = (test, consequent, alternate, loc) => ({
+        type: 'ConditionalExpression',
+        test,
+        consequent,
+        alternate,
+        loc
+    });
+    const unOpInstr = (symbol, srcNode) => ({
+        instrType: InstrType.UNARY_OP,
+        symbol,
+        srcNode
+    });
+
+    // closure.ts
+    class Closure {
+        constructor(node, environment, context, predefined = false) {
+            this.node = node;
+            this.environment = environment;
+            this.context = context;
+            this.predefined = predefined;
+            this.originalNode = node;
+        }
+        static makeFromArrowFunction(node, environment, context, dummyReturn = false, predefined = false) {
+            const functionBody = !isBlockStatement(node.body) && !isStatementSequence(node.body)
+                ? blockStatement([returnStatement(node.body, node.body.loc)], node.body.loc)
+                : dummyReturn && !hasReturnStatement(node.body)
+                    ? blockStatement([
+                        ...node.body.body,
+                        returnStatement(identifier('undefined', node.body.loc), node.body.loc)
+                    ], node.body.loc)
+                    : node.body;
+            const closure = new Closure(blockArrowFunction(node.params, functionBody, node.loc), environment, context, predefined);
+            closure.originalNode = node;
+            return closure;
+        }
+    }
+    const isStatementSequence = (node) => {
+        return node.type == 'StatementSequence';
+    };
+
+    // todo
+    // just put on here temporarily
+    const UNKNOWN_LOCATION = {
+        start: {
+            line: -1,
+            column: -1
+        },
+        end: {
+            line: -1,
+            column: -1
+        }
+    };
+    class RuntimeSourceError {
+        constructor(node) {
+            var _a;
+            this.type = ErrorType.RUNTIME;
+            this.severity = ErrorSeverity.ERROR;
+            this.message = 'Error';
+            this.location = (_a = node === null || node === void 0 ? void 0 : node.loc) !== null && _a !== void 0 ? _a : UNKNOWN_LOCATION;
+        }
+        explain() {
+            return '';
+        }
+        elaborate() {
+            return this.explain();
+        }
+    }
+
+    class TypeConcatenateError extends RuntimeSourceError {
+        constructor(node) {
+            super(node);
+            this.type = ErrorType.TYPE;
+        }
+        explain() {
+            return `TypeError: can only concatenate str (not "int") to str.`;
+        }
+        elaborate() {
+            return `You are trying to concatenate a string with an integer. To fix this, convert the integer to a string using str(), or ensure both operands are of the same type.`;
+        }
+    }
+    class MissingRequiredPositionalError extends RuntimeSourceError {
+        constructor(node, functionName, params, args) {
+            super(node);
+            this.type = ErrorType.TYPE;
+            this.functionName = functionName;
+            this.missingParamCnt = params.length - args.length;
+            const missingNames = [];
+            for (let i = args.length; i < params.length; i++) {
+                const param = params[i];
+                missingNames.push("\'" + param.name + "\'");
+            }
+            this.missingParamName = this.joinWithCommasAndAnd(missingNames);
+        }
+        explain() {
+            return `TypeError: ${this.functionName}() missing ${this.missingParamCnt} required positional argument: ${this.missingParamName}`;
+        }
+        elaborate() {
+            return `You called ${this.functionName}() without providing the required positional argument ${this.missingParamName}. Make sure to pass all required arguments when calling ${this.functionName}.`;
+        }
+        joinWithCommasAndAnd(names) {
+            if (names.length === 0) {
+                return '';
+            }
+            else if (names.length === 1) {
+                return names[0];
+            }
+            else if (names.length === 2) {
+                return `${names[0]} and ${names[1]}`;
+            }
+            else {
+                const last = names.pop();
+                return `${names.join(', ')} and ${last}`;
+            }
+        }
+    }
+    class TooManyPositionalArgumentsError extends RuntimeSourceError {
+        constructor(node, functionName, params, args) {
+            super(node);
+            this.type = ErrorType.TYPE;
+            this.functionName = functionName;
+            this.expectedCount = params.length;
+            this.givenCount = args.length;
+        }
+        explain() {
+            return `TypeError: ${this.functionName}() takes ${this.expectedCount} positional arguments but ${this.givenCount} were given`;
+        }
+        elaborate() {
+            return `You called ${this.functionName}() with ${this.givenCount} positional arguments, but it only expects ${this.expectedCount}. Make sure to pass the correct number of arguments when calling ${this.functionName}.`;
+        }
+    }
+
+    const isIdentifier = (node) => {
+        return node.name !== undefined;
+    };
+    const setToTrue = (item) => {
+        item.isEnvDependent = true;
+        return item;
+    };
+    const setToFalse = (item) => {
+        item.isEnvDependent = false;
+        return item;
+    };
+    const propertySetter = new Map([
+        // AST Nodes
+        [
+            'Program',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = node.body.some(elem => isEnvDependent(elem));
+                return node;
+            }
+        ],
+        ['Literal', setToFalse],
+        ['ImportDeclaration', setToFalse],
+        ['BreakStatement', setToFalse],
+        ['ContinueStatement', setToFalse],
+        ['DebuggerStatement', setToFalse],
+        ['VariableDeclaration', setToTrue],
+        ['FunctionDeclaration', setToTrue],
+        ['ArrowFunctionExpression', setToTrue],
+        ['Identifier', setToTrue],
+        [
+            'LogicalExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.left) || isEnvDependent(node.right);
+                return node;
+            }
+        ],
+        [
+            'BinaryExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.left) || isEnvDependent(node.right);
+                return node;
+            }
+        ],
+        [
+            'UnaryExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.argument);
+                return node;
+            }
+        ],
+        [
+            'ConditionalExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent =
+                    isEnvDependent(node.consequent) ||
+                        isEnvDependent(node.alternate) ||
+                        isEnvDependent(node.test);
+                return node;
+            }
+        ],
+        [
+            'MemberExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.property) || isEnvDependent(node.object);
+                return node;
+            }
+        ],
+        [
+            'ArrayExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = node.elements.some(elem => isEnvDependent(elem));
+                return node;
+            }
+        ],
+        [
+            'AssignmentExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.left) || isEnvDependent(node.right);
+                return node;
+            }
+        ],
+        [
+            'ReturnStatement',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.argument);
+                return node;
+            }
+        ],
+        [
+            'CallExpression',
+            (item) => {
+                const node = item;
+                node.isEnvDependent =
+                    isEnvDependent(node.callee) || node.arguments.some(arg => isEnvDependent(arg));
+                return node;
+            }
+        ],
+        [
+            'ExpressionStatement',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.expression);
+                return node;
+            }
+        ],
+        [
+            'IfStatement',
+            (item) => {
+                const node = item;
+                node.isEnvDependent =
+                    isEnvDependent(node.test) ||
+                        isEnvDependent(node.consequent) ||
+                        isEnvDependent(node.alternate);
+                return node;
+            }
+        ],
+        [
+            'ForStatement',
+            (item) => {
+                const node = item;
+                node.isEnvDependent =
+                    isEnvDependent(node.body) ||
+                        isEnvDependent(node.init) ||
+                        isEnvDependent(node.test) ||
+                        isEnvDependent(node.update);
+                return node;
+            }
+        ],
+        [
+            'WhileStatement',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = isEnvDependent(node.body) || isEnvDependent(node.test);
+                return node;
+            }
+        ],
+        [
+            'BlockStatement',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = node.body.some(stm => isEnvDependent(stm));
+                return node;
+            }
+        ],
+        [
+            'StatementSequence',
+            (item) => {
+                const node = item;
+                node.isEnvDependent = node.body.some(stm => isEnvDependent(stm));
+                return node;
+            }
+        ],
+        ['ImportSpecifier', setToTrue],
+        ['ImportDefaultSpecifier', setToTrue],
+        // InstrType
+        [InstrType.RESET, setToFalse],
+        [InstrType.UNARY_OP, setToFalse],
+        [InstrType.BINARY_OP, setToFalse],
+        [InstrType.CONTINUE, setToFalse],
+        [InstrType.ASSIGNMENT, setToTrue],
+        [
+            InstrType.WHILE,
+            (item) => {
+                const instr = item;
+                instr.isEnvDependent = isEnvDependent(instr.test) || isEnvDependent(instr.body);
+                return instr;
+            }
+        ],
+        [
+            InstrType.FOR,
+            (item) => {
+                const instr = item;
+                instr.isEnvDependent =
+                    isEnvDependent(instr.init) ||
+                        isEnvDependent(instr.test) ||
+                        isEnvDependent(instr.update) ||
+                        isEnvDependent(instr.body);
+                return instr;
+            }
+        ],
+        [
+            InstrType.BRANCH,
+            (item) => {
+                const instr = item;
+                instr.isEnvDependent = isEnvDependent(instr.consequent) || isEnvDependent(instr.alternate);
+                return instr;
+            }
+        ]
+    ]);
+    /**
+     * Checks whether the evaluation of the given control item depends on the current environment.
+     * The item is also considered environment dependent if its evaluation introduces
+     * environment dependent items
+     * @param item The control item to be checked
+     * @return `true` if the item is environment depedent, else `false`.
+     */
+    function isEnvDependent(item) {
+        var _a, _b;
+        if (item === null || item === undefined) {
+            return false;
+        }
+        // If result is already calculated, return it
+        if (item.isEnvDependent !== undefined) {
+            return item.isEnvDependent;
+        }
+        let setter;
+        if (isNode(item)) {
+            setter = propertySetter.get(item.type);
+        }
+        else if (isInstr(item)) {
+            setter = propertySetter.get(item.instrType);
+        }
+        if (setter) {
+            return (_b = (_a = setter(item)) === null || _a === void 0 ? void 0 : _a.isEnvDependent) !== null && _b !== void 0 ? _b : false;
+        }
+        return false;
+    }
+    // function isInstr(item: ControlItem): item is Instr & { isEnvDependent?: boolean } {
+    //   return (item as Instr).instrType !== undefined;
+    // }
+    // export const envChanging = (command: ControlItem): boolean => {
+    //   if (isNode(command)) {
+    //     const type = command.type
+    //     return (
+    //       type === 'Program' ||
+    //       type === 'BlockStatement' ||
+    //       type === 'ArrowFunctionExpression' ||
+    //       (type === 'ExpressionStatement' && command.expression.type === 'ArrowFunctionExpression')
+    //     )
+    //   } else {
+    //     const type = command.instrType
+    //     return (
+    //       type === InstrType.ENVIRONMENT ||
+    //       type === InstrType.ARRAY_LITERAL ||
+    //       type === InstrType.ASSIGNMENT ||
+    //       type === InstrType.ARRAY_ASSIGNMENT ||
+    //       (type === InstrType.APPLICATION && (command as AppInstr).numOfArgs > 0)
+    //     )
+    //   }
+    // }
+    const envChanging = (command) => {
+        if (isNode(command)) {
+            const type = command.type;
+            return (type === 'Program' ||
+                type === 'BlockStatement' ||
+                type === 'ArrowFunctionExpression' ||
+                (type === 'ExpressionStatement' && command.expression.type === 'ArrowFunctionExpression'));
+        }
+        else if (isInstr(command)) {
+            command.instrType;
+            return (false);
+        }
+        else {
+            return false;
+        }
+    };
+    function declareFunctionsAndVariables(context, node, environment) {
+        for (const statement of node.body) {
+            switch (statement.type) {
+                case 'VariableDeclaration':
+                    declareVariables(context, statement, environment);
+                    break;
+                case 'FunctionDeclaration':
+                    // FunctionDeclaration is always of type constant
+                    declareIdentifier(context, statement.id.name, statement, environment, true);
+                    break;
+            }
+        }
+    }
+    function declareVariables(context, node, environment) {
+        for (const declaration of node.declarations) {
+            // Retrieve declaration type from node
+            const constant = node.kind === 'const';
+            declareIdentifier(context, declaration.id.name, node, environment, constant);
+        }
+    }
+    function declareIdentifier(context, name, node, environment, constant = false) {
+        if (environment.head.hasOwnProperty(name)) {
+            Object.getOwnPropertyDescriptors(environment.head);
+            // return handleRuntimeError(
+            //   context,
+            //   new errors.VariableRedeclaration(node, name, descriptors[name].writable)
+            // )
+        }
+        //environment.head[name] = constant ? UNASSIGNED_CONST : UNASSIGNED_LET
+        environment.head[name] = 'declaration';
+        return environment;
+    }
+    const handleSequence = (seq) => {
+        const result = [];
+        let valueProduced = false;
+        for (const command of seq) {
+            //if (!isImportDeclaration(command)) {
+            if (valueProducing(command)) {
+                // Value producing statements have an extra pop instruction
+                if (valueProduced) {
+                    result.push(popInstr(command));
+                }
+                else {
+                    valueProduced = true;
+                }
+            }
+            result.push(command);
+            //}
+        }
+        // Push statements in reverse order
+        return result.reverse();
+    };
+    const valueProducing = (command) => {
+        const type = command.type;
+        return (type !== 'VariableDeclaration' &&
+            type !== 'FunctionDeclaration' &&
+            type !== 'ContinueStatement' &&
+            type !== 'BreakStatement' &&
+            type !== 'DebuggerStatement' &&
+            (type !== 'BlockStatement' || command.body.some(valueProducing)));
+    };
+    function defineVariable(context, name, value, constant = false, node) {
+        const environment = currentEnvironment(context);
+        if (environment.head[name] !== 'declaration') ;
+        if (constant && value instanceof Closure) {
+            value.declaredName = name;
+        }
+        Object.defineProperty(environment.head, name, {
+            value,
+            writable: !constant,
+            enumerable: true
+        });
+        return environment;
+    }
+    const getVariable = (context, name, node) => {
+        let environment = currentEnvironment(context);
+        while (environment) {
+            if (environment.head.hasOwnProperty(name)) {
+                if (environment.head[name] === 'declaration') ;
+                else {
+                    return environment.head[name];
+                }
+            }
+            else {
+                environment = environment.tail;
+            }
+        }
+        //return handleRuntimeError(context, new errors.UndefinedVariable(name, node))
+    };
+    const checkNumberOfArguments = (command, context, callee, args, exp) => {
+        if (callee instanceof Closure) {
+            // User-defined or Pre-defined functions
+            const params = callee.node.params;
+            // console.info("params: ", params);
+            // console.info("args: ", args);
+            //const hasVarArgs = params[params.length - 1]?.type === 'RestElement'
+            if (params.length > args.length) {
+                handleRuntimeError(context, new MissingRequiredPositionalError(command, callee.declaredName, params, args));
+            }
+            else if (params.length !== args.length) {
+                handleRuntimeError(context, new TooManyPositionalArgumentsError(command, callee.declaredName, params, args));
+            }
+            //}
+            // if (hasVarArgs ? params.length - 1 > args.length : params.length !== args.length) {
+            //   // error
+            //   // return handleRuntimeError(
+            //   //   context,
+            //   //   new errors.InvalidNumberOfArguments(
+            //   //     exp,
+            //   //     hasVarArgs ? params.length - 1 : params.length,
+            //   //     args.length,
+            //   //     hasVarArgs
+            //   //   )
+            //   // )
+            // }
+        }
+        else {
+            // Pre-built functions
+            const hasVarArgs = callee.minArgsNeeded != undefined;
+            if (hasVarArgs ? callee.minArgsNeeded > args.length : callee.length !== args.length) ;
+        }
+        return undefined;
+    };
+    const isInstr = (command) => {
+        return command.instrType !== undefined;
+    };
+    const isSimpleFunction = (node) => {
+        if (node.body.type !== 'BlockStatement' && node.body.type !== 'StatementSequence') {
+            return true;
+        }
+        else {
+            const block = node.body;
+            return block.body.length === 1 && block.body[0].type === 'ReturnStatement';
+        }
+    };
+    const reduceConditional = (node) => {
+        return [branchInstr(node.consequent, node.alternate, node), node.test];
+    };
+    const handleRuntimeError = (context, error) => {
+        context.errors.push(error);
+        console.error(error.explain());
+        console.error(error.elaborate());
+        //console.log("Location:", `Line ${e.location.start.line}, Column ${e.location.start.column}`);
+        throw error;
+    };
+    function pythonMod(a, b) {
+        const mod = a % b;
+        if ((mod >= 0 && b > 0) || (mod <= 0 && b < 0)) {
+            return mod;
+        }
+        else {
+            return mod + b;
+        }
+    }
+    function hasImportDeclarations(node) {
+        for (const statement of node.body) {
+            if (statement.type === 'ImportDeclaration') {
+                return true;
+            }
+        }
+        return false;
+    }
+    const isImportDeclaration = (node) => node.type === 'ImportDeclaration';
+    function getModuleDeclarationSource(node) {
+        var _a, _b;
+        assert(typeof ((_a = node.source) === null || _a === void 0 ? void 0 : _a.value) === 'string', `Expected ${node.type} to have a source value of type string, got ${(_b = node.source) === null || _b === void 0 ? void 0 : _b.value}`);
+        return node.source.value;
+    }
+    class AssertionError extends RuntimeSourceError {
+        constructor(message) {
+            super();
+            this.message = message;
+        }
+        explain() {
+            return this.message;
+        }
+        elaborate() {
+            return 'Please contact the administrators to let them know that this error has occurred';
+        }
+    }
+    function assert(condition, message) {
+        if (!condition) {
+            throw new AssertionError(message);
+        }
+    }
+
+    class Control extends Stack {
+        constructor(program) {
+            super();
+            this.numEnvDependentItems = 0;
+            // Load program into control stack
+            program ? this.push(program) : null;
+        }
+        canAvoidEnvInstr() {
+            return this.numEnvDependentItems === 0;
+        }
+        // For testing purposes
+        getNumEnvDependentItems() {
+            return this.numEnvDependentItems;
+        }
+        pop() {
+            const item = super.pop();
+            if (item !== undefined && isEnvDependent(item)) {
+                this.numEnvDependentItems--;
+            }
+            return item;
+        }
+        push(...items) {
+            const itemsNew = Control.simplifyBlocksWithoutDeclarations(...items);
+            itemsNew.forEach((item) => {
+                if (isEnvDependent(item)) {
+                    this.numEnvDependentItems++;
+                }
+            });
+            super.push(...itemsNew);
+        }
+        /**
+         * Before pushing block statements on the control stack, we check if the block statement has any declarations.
+         * If not, the block is converted to a StatementSequence.
+         * @param items The items being pushed on the control.
+         * @returns The same set of control items, but with block statements without declarations converted to StatementSequences.
+         * NOTE: this function handles any case where StatementSequence has to be converted back into BlockStatement due to type issues
+         */
+        static simplifyBlocksWithoutDeclarations(...items) {
+            const itemsNew = [];
+            items.forEach(item => {
+                if (isNode(item) && isBlockStatement(item) && !hasDeclarations(item)) {
+                    // Push block body as statement sequence
+                    const seq = statementSequence(item.body, item.loc);
+                    itemsNew.push(seq);
+                }
+                else {
+                    itemsNew.push(item);
+                }
+            });
+            return itemsNew;
+        }
+        copy() {
+            const newControl = new Control();
+            const stackCopy = super.getStack();
+            newControl.push(...stackCopy);
+            return newControl;
+        }
+    }
+
+    class Stash extends Stack {
+        constructor() {
+            super();
+        }
+        copy() {
+            const newStash = new Stash();
+            const stackCopy = super.getStack();
+            newStash.push(...stackCopy);
+            return newStash;
+        }
+    }
+
+    // export function evaluateBinaryExpression(operator: BinaryOperator, left: any, right: any) {
+    //     switch (operator) {
+    //       case '+':
+    //         return left + right
+    //       case '-':
+    //         return left - right
+    //       case '*':
+    //         return left * right
+    //       case '/':
+    //         return left / right
+    //       case '%':
+    //         return left % right
+    //       case '===':
+    //         return left === right
+    //       case '!==':
+    //         return left !== right
+    //       case '<=':
+    //         return left <= right
+    //       case '<':
+    //         return left < right
+    //       case '>':
+    //         return left > right
+    //       case '>=':
+    //         return left >= right
+    //       default:
+    //         return undefined
+    //     }
+    //   }
+    function evaluateUnaryExpression(operator, value) {
+        if (operator === '!') {
+            if (value.type === 'bool') {
+                return {
+                    type: 'bool',
+                    value: !(Boolean(value.value))
+                };
+            }
+        }
+        else if (operator === '-') {
+            if (value.type === 'bigint') {
+                return {
+                    type: 'bigint',
+                    value: -value.value
+                };
+            }
+            else if (value.type === 'number') {
+                return {
+                    type: 'number',
+                    value: -Number(value.value)
+                };
+            }
+            else ;
+            // else if (value.type === 'bool') {
+            //     return {
+            //         type: 'bigint',
+            //         value: Boolean(value.value)?BigInt(-1):BigInt(0)
+            //     };
+            // }
+        }
+        else if (operator === 'typeof') {
+            // todo
+            return {
+                type: String,
+                value: typeof value.value
+            };
+        }
+        else {
+            return value;
+        }
+    }
+    function evaluateBinaryExpression(context, identifier, left, right) {
+        //if(isIdentifier(identifier)){
+        //if(identifier.name === '__py_adder') {
+        if (left.type === 'string' && right.type === 'string' && identifier.name === '__py_adder') {
+            if (isIdentifier(identifier) && identifier.name === '__py_adder') {
+                return {
+                    type: 'string',
+                    value: left.value + right.value
+                };
+            }
+            else {
+                let ret_value;
+                if (identifier === '>') {
+                    ret_value = left.value > right.value;
+                }
+                else if (identifier === '>=') {
+                    ret_value = left.value >= right.value;
+                }
+                else if (identifier === '<') {
+                    ret_value = left.value < right.value;
+                }
+                else if (identifier === '<=') {
+                    ret_value = left.value <= right.value;
+                }
+                else if (identifier === '===') {
+                    ret_value = left.value === right.value;
+                }
+                else if (identifier === '!==') {
+                    ret_value = left.value !== right.value;
+                }
+                else ;
+                return {
+                    type: 'bool',
+                    value: ret_value
+                };
+            }
+        }
+        else {
+            // numbers: only int and float, not bool
+            const numericTypes = ['number', 'bigint', 'complex']; //, 'bool'
+            if (!numericTypes.includes(left.type) || !numericTypes.includes(right.type)) ;
+            // if (left.type === 'bool') {
+            //     left.type = 'bigint';
+            //     left.value = left.value?BigInt(1):BigInt(0);
+            // }
+            // if (right.type === 'bool') {
+            //     right.type = 'bigint';
+            //     right.value = right.value?BigInt(1):BigInt(0);
+            // }
+            let originalLeft = { type: left.type, value: left.value };
+            let originalRight = { type: right.type, value: right.value };
+            if (left.type !== right.type) {
+                // left.type = 'number';
+                // left.value = Number(left.value);
+                // right.type = 'number';
+                // right.value = Number(right.value);
+                if (left.type === 'complex' || right.type === 'complex') {
+                    left.type = 'complex';
+                    right.type = 'complex';
+                    left.value = PyComplexNumber.fromValue(left.value);
+                    right.value = PyComplexNumber.fromValue(right.value);
+                }
+                else if (left.type === 'number' || right.type === 'number') {
+                    left.type = 'number';
+                    right.type = 'number';
+                    left.value = Number(left.value);
+                    right.value = Number(right.value);
+                }
+            }
+            let ret_value;
+            let ret_type = left.type;
+            if (isIdentifier(identifier)) {
+                if (identifier.name === '__py_adder') {
+                    if (left.type === 'complex' || right.type === 'complex') {
+                        const leftComplex = PyComplexNumber.fromValue(left.value);
+                        const rightComplex = PyComplexNumber.fromValue(right.value);
+                        ret_value = leftComplex.add(rightComplex);
+                    }
+                    else {
+                        ret_value = left.value + right.value;
+                    }
+                }
+                else if (identifier.name === '__py_minuser') {
+                    if (left.type === 'complex' || right.type === 'complex') {
+                        const leftComplex = PyComplexNumber.fromValue(left.value);
+                        const rightComplex = PyComplexNumber.fromValue(right.value);
+                        ret_value = leftComplex.sub(rightComplex);
+                    }
+                    else {
+                        ret_value = left.value - right.value;
+                    }
+                }
+                else if (identifier.name === '__py_multiplier') {
+                    if (left.type === 'complex' || right.type === 'complex') {
+                        const leftComplex = PyComplexNumber.fromValue(left.value);
+                        const rightComplex = PyComplexNumber.fromValue(right.value);
+                        ret_value = leftComplex.mul(rightComplex);
+                    }
+                    else {
+                        ret_value = left.value * right.value;
+                    }
+                }
+                else if (identifier.name === '__py_divider') {
+                    if (left.type === 'complex' || right.type === 'complex') {
+                        const leftComplex = PyComplexNumber.fromValue(left.value);
+                        const rightComplex = PyComplexNumber.fromValue(right.value);
+                        ret_value = leftComplex.div(rightComplex);
+                    }
+                    else {
+                        if (right.value !== 0) {
+                            ret_type = 'number';
+                            ret_value = Number(left.value) / Number(right.value);
+                        }
+                    }
+                }
+                else if (identifier.name === '__py_modder') {
+                    if (left.type === 'complex') ;
+                    ret_value = pythonMod(left.value, right.value);
+                }
+                else if (identifier.name === '__py_floorer') {
+                    // TODO: floorer not in python now
+                    ret_value = 0;
+                }
+                else if (identifier.name === '__py_powerer') {
+                    if (left.type === 'complex') {
+                        const leftComplex = PyComplexNumber.fromValue(left.value);
+                        const rightComplex = PyComplexNumber.fromValue(right.value);
+                        ret_value = leftComplex.pow(rightComplex);
+                    }
+                    else {
+                        if (left.type === 'bigint' && right.value < 0) {
+                            ret_value = Number(left.value) ** Number(right.value);
+                            ret_type = 'number';
+                        }
+                        else {
+                            ret_value = left.value ** right.value;
+                        }
+                    }
+                }
+                else ;
+            }
+            else {
+                ret_type = 'bool';
+                // one of them is complex, convert all to complex then compare
+                // for complex, only '==' and '!=' valid
+                if (left.type === 'complex') {
+                    const leftComplex = PyComplexNumber.fromValue(left.value);
+                    const rightComplex = PyComplexNumber.fromValue(right.value);
+                    if (identifier === '===') {
+                        ret_value = leftComplex.equals(rightComplex);
+                    }
+                    else if (identifier === '!==') {
+                        ret_value = !leftComplex.equals(rightComplex);
+                    }
+                    else ;
+                }
+                else if (originalLeft.type !== originalRight.type) {
+                    let int_num;
+                    let floatNum;
+                    let compare_res;
+                    if (originalLeft.type === 'bigint') {
+                        int_num = originalLeft;
+                        floatNum = originalRight;
+                        compare_res = pyCompare(int_num, floatNum);
+                    }
+                    else {
+                        int_num = originalRight;
+                        floatNum = originalLeft;
+                        compare_res = -pyCompare(int_num, floatNum);
+                    }
+                    if (identifier === '>') {
+                        ret_value = compare_res > 0;
+                    }
+                    else if (identifier === '>=') {
+                        ret_value = compare_res >= 0;
+                    }
+                    else if (identifier === '<') {
+                        ret_value = compare_res < 0;
+                    }
+                    else if (identifier === '<=') {
+                        ret_value = compare_res <= 0;
+                    }
+                    else if (identifier === '===') {
+                        ret_value = compare_res === 0;
+                    }
+                    else if (identifier === '!==') {
+                        ret_value = compare_res !== 0;
+                    }
+                    else ;
+                }
+                else {
+                    if (identifier === '>') {
+                        ret_value = left.value > right.value;
+                    }
+                    else if (identifier === '>=') {
+                        ret_value = left.value >= right.value;
+                    }
+                    else if (identifier === '<') {
+                        ret_value = left.value < right.value;
+                    }
+                    else if (identifier === '<=') {
+                        ret_value = left.value <= right.value;
+                    }
+                    else if (identifier === '===') {
+                        ret_value = left.value === right.value;
+                    }
+                    else if (identifier === '!==') {
+                        ret_value = left.value !== right.value;
+                    }
+                    else ;
+                }
+            }
+            return {
+                type: ret_type,
+                value: ret_value
+            };
+        }
+    }
+    function pyCompare(int_num, float_num) {
+        // int_num.value < float_num.value => -1
+        // int_num.value = float_num.value => 0
+        // int_num.value > float_num.value => 1
+        // If float_num is positive Infinity, then int_num is considered smaller.
+        if (float_num.value === Infinity) {
+            return -1;
+        }
+        if (float_num.value === -Infinity) {
+            return 1;
+        }
+        const signInt = (int_num.value < 0) ? -1 : (int_num.value > 0 ? 1 : 0);
+        const signFlt = Math.sign(float_num.value); // -1, 0, or 1
+        if (signInt < signFlt)
+            return -1; // e.g. int<0, float>=0 => int < float
+        if (signInt > signFlt)
+            return 1; // e.g. int>=0, float<0 => int > float
+        // Both have the same sign (including 0).
+        // If both are zero, treat them as equal.
+        if (signInt === 0 && signFlt === 0) {
+            return 0;
+        }
+        // Both are either positive or negative.
+        // If |int_num.value| is within 2^53, it can be safely converted to a JS number for an exact comparison.
+        const absInt = int_num.value < 0 ? -int_num.value : int_num.value;
+        const MAX_SAFE = 9007199254740991; // 2^53 - 1
+        if (absInt <= MAX_SAFE) {
+            // Safe conversion to double.
+            const intAsNum = Number(int_num.value);
+            const diff = intAsNum - float_num.value;
+            if (diff === 0)
+                return 0;
+            return diff < 0 ? -1 : 1;
+        }
+        // For large integers exceeding 2^53, we need to distinguish more carefully.
+        // General idea: Determine the order of magnitude of float_num.value (via log10) and compare it with
+        // the number of digits of int_num.value. An approximate comparison can indicate whether
+        // int_num.value is greater or less than float_num.value.
+        // First, check if float_num.value is nearly zero (but not zero).
+        if (float_num.value === 0) {
+            // Although signFlt would be 0 and handled above, just to be safe:
+            return signInt;
+        }
+        const absFlt = Math.abs(float_num.value);
+        // Determine the order of magnitude.
+        const exponent = Math.floor(Math.log10(absFlt));
+        // For example, if float_num.value = 3.333333e49, exponent = 49, indicating roughly 50 digits in its integer part.
+        // Get the decimal string representation of the absolute integer.
+        const intStr = absInt.toString();
+        const intDigits = intStr.length;
+        // If exponent + 1 is less than intDigits, then |int_num.value| has more digits
+        // and is larger (if positive) or smaller (if negative) than float_num.value.
+        // Conversely, if exponent + 1 is greater than intDigits, int_num.value has fewer digits.
+        const integerPartLen = exponent + 1;
+        if (integerPartLen < intDigits) {
+            // length of int_num.value is larger => all positive => int_num.value > float_num.value
+            //                => all negative => int_num.value < float_num.value
+            return (signInt > 0) ? 1 : -1;
+        }
+        else if (integerPartLen > intDigits) {
+            // length of int_num.value is smaller => all positive => int_num.value < float_num.value
+            //                => all negative => int_num.value > float_num.value
+            return (signInt > 0) ? -1 : 1;
+        }
+        else {
+            // (5.2) If the number of digits is the same, they may be extremely close.
+            // Method: Convert float_num.value into an approximate BigInt string and perform a lexicographical comparison.
+            const floatApproxStr = approximateBigIntString(absFlt, 30);
+            const aTrim = intStr.replace(/^0+/, '');
+            const bTrim = floatApproxStr.replace(/^0+/, '');
+            // If lengths differ after trimming, the one with more digits is larger.
+            if (aTrim.length > bTrim.length) {
+                return (signInt > 0) ? 1 : -1;
+            }
+            else if (aTrim.length < bTrim.length) {
+                return (signInt > 0) ? -1 : 1;
+            }
+            else {
+                // Same length: use lexicographical comparison.
+                const cmp = aTrim.localeCompare(bTrim);
+                if (cmp === 0) {
+                    return 0;
+                }
+                // cmp>0 => aTrim > bTrim => aVal > bVal
+                return (cmp > 0) ? (signInt > 0 ? 1 : -1)
+                    : (signInt > 0 ? -1 : 1);
+            }
+        }
+    }
+    function approximateBigIntString(num, precision) {
+        // Use scientific notation to obtain a string in the form "3.333333333333333e+49"
+        const s = num.toExponential(precision);
+        // Split into mantissa and exponent parts.
+        // The regular expression matches strings of the form: /^([\d.]+)e([+\-]\d+)$/
+        const match = s.match(/^([\d.]+)e([+\-]\d+)$/);
+        if (!match) {
+            // For extremely small or extremely large numbers, toExponential() should follow this format.
+            // As a fallback, return Math.floor(num).toString()
+            return Math.floor(num).toString();
+        }
+        let mantissaStr = match[1]; // "3.3333333333..."
+        const exp = parseInt(match[2], 10); // e.g. +49
+        // Remove the decimal point
+        mantissaStr = mantissaStr.replace('.', '');
+        // Get the current length of the mantissa string
+        const len = mantissaStr.length;
+        // Calculate the required integer length: for exp ≥ 0, we want the integer part
+        // to have (1 + exp) digits.
+        const integerLen = 1 + exp;
+        if (integerLen <= 0) {
+            // This indicates num < 1 (e.g., exponent = -1, mantissa = "3" results in 0.xxx)
+            // For big integer comparison, such a number is very small, so simply return "0"
+            return "0";
+        }
+        if (len < integerLen) {
+            // The mantissa is not long enough; pad with zeros at the end.
+            return mantissaStr.padEnd(integerLen, '0');
+        }
+        // If the mantissa is too long, truncate it (this is equivalent to taking the floor).
+        // Rounding could be applied if necessary, but truncation is sufficient for comparison.
+        return mantissaStr.slice(0, integerLen);
+    }
+
+    class CseError {
+        constructor(message) {
+            this.message = message;
+        }
+    }
+
+    /**
+     * Python style dictionary
+     */
+    class Dict {
+        constructor(internalMap = new Map()) {
+            this.internalMap = internalMap;
+        }
+        get size() {
+            return this.internalMap.size;
+        }
+        [Symbol.iterator]() {
+            return this.internalMap[Symbol.iterator]();
+        }
+        get(key) {
+            return this.internalMap.get(key);
+        }
+        set(key, value) {
+            return this.internalMap.set(key, value);
+        }
+        has(key) {
+            return this.internalMap.has(key);
+        }
+        /**
+         * Similar to how the python dictionary's setdefault function works:
+         * If the key is not present, it is set to the given value, then that value is returned
+         * Otherwise, `setdefault` returns the value stored in the dictionary without
+         * modifying it
+         */
+        setdefault(key, value) {
+            if (!this.has(key)) {
+                this.set(key, value);
+            }
+            return this.get(key);
+        }
+        update(key, defaultVal, updater) {
+            const value = this.setdefault(key, defaultVal);
+            const newValue = updater(value);
+            this.set(key, newValue);
+            return newValue;
+        }
+        entries() {
+            return [...this.internalMap.entries()];
+        }
+        forEach(func) {
+            this.internalMap.forEach((v, k) => func(k, v));
+        }
+        /**
+         * Similar to `mapAsync`, but for an async mapping function that does not return any value
+         */
+        forEachAsync(func) {
+            return __awaiter(this, void 0, void 0, function* () {
+                yield Promise.all(this.map((key, value, i) => func(key, value, i)));
+            });
+        }
+        map(func) {
+            return this.entries().map(([k, v], i) => func(k, v, i));
+        }
+        /**
+         * Using a mapping function that returns a promise, transform a map
+         * to another map with different keys and values. All calls to the mapping function
+         * execute asynchronously
+         */
+        mapAsync(func) {
+            return Promise.all(this.map((key, value, i) => func(key, value, i)));
+        }
+        flatMap(func) {
+            return this.entries().flatMap(([k, v], i) => func(k, v, i));
+        }
+    }
+    /**
+     * Convenience class for maps that store an array of values
+     */
+    class ArrayMap extends Dict {
+        add(key, item) {
+            this.setdefault(key, []).push(item);
+        }
+    }
+    function filterImportDeclarations({ body }) {
+        return body.reduce(([importNodes, otherNodes], node) => {
+            if (!isImportDeclaration(node))
+                return [importNodes, [...otherNodes, node]];
+            const moduleName = getModuleDeclarationSource(node);
+            importNodes.add(moduleName, node);
+            return [importNodes, otherNodes];
+        }, [new ArrayMap(), []]);
+    }
+
+    /**
+     * This interpreter implements an explicit-control evaluator.
+     *
+     * Heavily adapted from https://github.com/source-academy/JSpike/
+     */
+    let cseFinalPrint = "";
+    function addPrint(str) {
+        cseFinalPrint = cseFinalPrint + str + "\n";
+    }
+    /**
+     * Function that returns the appropriate Promise<Result> given the output of CSE machine evaluating, depending
+     * on whether the program is finished evaluating, ran into a breakpoint or ran into an error.
+     * @param context The context of the program.
+     * @param value The value of CSE machine evaluating the program.
+     * @returns The corresponding promise.
+     */
+    function CSEResultPromise(context, value) {
+        return new Promise((resolve, reject) => {
+            if (value instanceof CSEBreak) {
+                resolve({ status: 'suspended-cse-eval', context });
+            }
+            else if (value instanceof CseError) {
+                resolve({ status: 'error' });
+            }
+            else {
+                //const rep: Value = { type: "string", value: cseFinalPrint };
+                const representation = new Representation(value);
+                resolve({ status: 'finished', context, value, representation });
+            }
+        });
+    }
+    /**
+     * Function to be called when a program is to be interpreted using
+     * the explicit control evaluator.
+     *
+     * @param program The program to evaluate.
+     * @param context The context to evaluate the program in.
+     * @param options Evaluation options.
+     * @returns The result of running the CSE machine.
+     */
+    function evaluate(program, context, options = {}) {
+        // TODO: should call transformer like in js-slang
+        // seq.transform(program)
+        try {
+            context.runtime.isRunning = true;
+            context.control = new Control(program);
+            context.stash = new Stash();
+            // Adaptation for new feature
+            const result = runCSEMachine$1(context, context.control, context.stash, options.envSteps, options.stepLimit, options.isPrelude);
+            const rep = { type: "string", value: cseFinalPrint };
+            return rep;
+        }
+        catch (error) {
+            context.errors.push(new CseError(error.message));
+            return { type: 'error', message: error.message };
+        }
+        finally {
+            context.runtime.isRunning = false;
+        }
+    }
+    function evaluateImports(program, context) {
+        try {
+            const [importNodeMap] = filterImportDeclarations(program);
+            const environment = currentEnvironment(context);
+            for (const [moduleName, nodes] of importNodeMap) {
+                const functions = context.nativeStorage.loadedModules[moduleName];
+                for (const node of nodes) {
+                    for (const spec of node.specifiers) {
+                        declareIdentifier(context, spec.local.name, node, environment);
+                        let obj;
+                        switch (spec.type) {
+                            case 'ImportSpecifier': {
+                                if (spec.imported.type === 'Identifier') {
+                                    obj = functions[spec.imported.name];
+                                }
+                                else {
+                                    throw new Error(`Unexpected literal import: ${spec.imported.value}`);
+                                }
+                                //obj = functions[(spec.imported).name]
+                                break;
+                            }
+                            case 'ImportDefaultSpecifier': {
+                                obj = functions.default;
+                                break;
+                            }
+                            case 'ImportNamespaceSpecifier': {
+                                obj = functions;
+                                break;
+                            }
+                        }
+                        defineVariable(context, spec.local.name, obj, true, node);
+                    }
+                }
+            }
+        }
+        catch (error) {
+            handleRuntimeError(context, error);
+        }
+    }
+    /**
+     * The primary runner/loop of the explicit control evaluator.
+     *
+     * @param context The context to evaluate the program in.
+     * @param control Points to the current Control stack.
+     * @param stash Points to the current Stash.
+     * @param envSteps Number of environment steps to run.
+     * @param stepLimit Maximum number of steps to execute.
+     * @param isPrelude Whether the program is the prelude.
+     * @returns The top value of the stash after execution.
+     */
+    function runCSEMachine$1(context, control, stash, envSteps, stepLimit, isPrelude = false) {
+        const eceState = generateCSEMachineStateStream(context, control, stash, envSteps, stepLimit, isPrelude);
+        // Execute the generator until it completes
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for (const value of eceState) {
+        }
+        // Return the value at the top of the storage as the result
+        const result = stash.peek();
+        return result !== undefined ? result : { type: 'undefined' };
+    }
+    /**
+     * Generator function that yields the state of the CSE Machine at each step.
+     *
+     * @param context The context of the program.
+     * @param control The control stack.
+     * @param stash The stash storage.
+     * @param envSteps Number of environment steps to run.
+     * @param stepLimit Maximum number of steps to execute.
+     * @param isPrelude Whether the program is the prelude.
+     * @yields The current state of the stash, control stack, and step count.
+     */
+    function* generateCSEMachineStateStream(context, control, stash, envSteps, stepLimit, isPrelude = false) {
+        // steps: number of steps completed
+        let steps = 0;
+        let command = control.peek();
+        // Push first node to be evaluated into context.
+        // The typeguard is there to guarantee that we are pushing a node (which should always be the case)
+        if (command && isNode(command)) {
+            context.runtime.nodes.unshift(command);
+        }
+        while (command) {
+            // For local debug only
+            // console.info('next command to be evaluated');
+            // console.info(command);
+            // Return to capture a snapshot of the control and stash after the target step count is reached
+            if (!isPrelude && steps === envSteps) {
+                yield { stash, control, steps };
+                return;
+            }
+            // Step limit reached, stop further evaluation
+            if (!isPrelude && steps === stepLimit) {
+                break;
+            }
+            if (!isPrelude && envChanging(command)) {
+                // command is evaluated on the next step
+                // Hence, next step will change the environment
+                context.runtime.changepointSteps.push(steps + 1);
+            }
+            control.pop();
+            if (isNode(command)) {
+                context.runtime.nodes.shift();
+                context.runtime.nodes.unshift(command);
+                //checkEditorBreakpoints(context, command)
+                cmdEvaluators[command.type](command, context, control, stash, isPrelude);
+                if (context.runtime.break && context.runtime.debuggerOn) ;
+            }
+            else {
+                // Command is an instruction
+                cmdEvaluators[command.instrType](command, context, control, stash, isPrelude);
+            }
+            // Push undefined into the stack if both control and stash is empty
+            if (control.isEmpty() && stash.isEmpty()) ;
+            command = control.peek();
+            steps += 1;
+            if (!isPrelude) {
+                context.runtime.envStepsTotal = steps;
+            }
+            // printEnvironmentVariables(context.runtime.environments);
+            yield { stash, control, steps };
+        }
+    }
+    const cmdEvaluators = {
+        /**
+         * AST Nodes
+         */
+        Program: function (command, context, control, stash, isPrelude) {
+            // Clean up non-global, non-program, and non-preparation environments
+            while (currentEnvironment(context).name !== 'global' &&
+                currentEnvironment(context).name !== 'programEnvironment' &&
+                currentEnvironment(context).name !== 'prelude') {
+                popEnvironment(context);
+            }
+            if (hasDeclarations(command) || hasImportDeclarations(command)) {
+                if (currentEnvironment(context).name != 'programEnvironment') {
+                    const programEnv = createProgramEnvironment(context, isPrelude);
+                    pushEnvironment(context, programEnv);
+                }
+                const environment = currentEnvironment(context);
+                evaluateImports(command, context);
+                declareFunctionsAndVariables(context, command, environment);
+            }
+            if (command.body.length === 1) {
+                // If the program contains only a single statement, execute it immediately
+                const next = command.body[0];
+                cmdEvaluators[next.type](next, context, control, stash, isPrelude);
+            }
+            else {
+                // Push the block body as a sequence of statements onto the control stack
+                const seq = statementSequence(command.body, command.loc);
+                control.push(seq);
+            }
+        },
+        BlockStatement: function (command, context, control) {
+            const next = control.peek();
+            // for some of the block statements, such as if, for,
+            // no need to create a new environment
+            if (!command.skipEnv) {
+                // If environment instructions need to be pushed
+                if (next &&
+                    !(isInstr(next) && next.instrType === InstrType.ENVIRONMENT) &&
+                    !control.canAvoidEnvInstr()) {
+                    control.push(envInstr(currentEnvironment(context), command));
+                }
+                // create new block environment (for function)
+                const environment = createBlockEnvironment(context, 'blockEnvironment');
+                declareFunctionsAndVariables(context, command, environment);
+                pushEnvironment(context, environment);
+            }
+            // Push the block body onto the control stack as a sequence of statements
+            const seq = statementSequence(command.body, command.loc);
+            control.push(seq);
+        },
+        StatementSequence: function (command, context, control, stash, isPrelude) {
+            if (command.body.length === 1) {
+                // If the program contains only a single statement, execute it immediately
+                const next = command.body[0];
+                cmdEvaluators[next.type](next, context, control, stash, isPrelude);
+            }
+            else {
+                // Split and push individual nodes
+                control.push(...handleSequence(command.body));
+            }
+        },
+        // WhileStatement: function (
+        //   command: es.WhileStatement,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   if (hasBreakStatement(command.body as es.BlockStatement)) {
+        //     control.push(instr.breakMarkerInstr(command));
+        //   }
+        //   control.push(instr.whileInstr(command.test, command.body, command));
+        //   control.push(command.test);
+        //   control.push(ast.identifier('undefined', command.loc)); // 如果没有循环执行，返回 undefined
+        // },
+        // ForStatement: function (
+        //   command: es.ForStatement,
+        //   context: Context,
+        //   control: Control
+        // ) {
+        //   const init = command.init!;
+        //   const test = command.test!;
+        //   const update = command.update!;
+        //   if (init.type === 'VariableDeclaration' && init.kind === 'let') {
+        //     const id = init.declarations[0].id as es.Identifier;
+        //     const valueExpression = init.declarations[0].init!;
+        //     control.push(
+        //       ast.blockStatement(
+        //         [
+        //           init,
+        //           ast.forStatement(
+        //             ast.assignmentExpression(id, valueExpression, command.loc),
+        //             test,
+        //             update,
+        //             ast.blockStatement(
+        //               [
+        //                 ast.variableDeclaration(
+        //                   [
+        //                     ast.variableDeclarator(
+        //                       ast.identifier(`_copy_of_${id.name}`, command.loc),
+        //                       ast.identifier(id.name, command.loc),
+        //                       command.loc
+        //                     )
+        //                   ],
+        //                   command.loc
+        //                 ),
+        //                 ast.blockStatement(
+        //                   [
+        //                     ast.variableDeclaration(
+        //                       [
+        //                         ast.variableDeclarator(
+        //                           ast.identifier(id.name, command.loc),
+        //                           ast.identifier(`_copy_of_${id.name}`, command.loc),
+        //                           command.loc
+        //                         )
+        //                       ],
+        //                       command.loc
+        //                     ),
+        //                     command.body
+        //                   ],
+        //                   command.loc
+        //                 )
+        //               ],
+        //               command.loc
+        //             ),
+        //             command.loc
+        //           )
+        //         ],
+        //         command.loc
+        //       )
+        //     );
+        //   } else {
+        //     if (hasBreakStatement(command.body as es.BlockStatement)) {
+        //       control.push(instr.breakMarkerInstr(command));
+        //     }
+        //     control.push(instr.forInstr(init, test, update, command.body, command));
+        //     control.push(test);
+        //     control.push(instr.popInstr(command)); // Pop value from init assignment
+        //     control.push(init);
+        //     control.push(ast.identifier('undefined', command.loc)); // Return undefined if there is no loop execution
+        //   }
+        // },
+        IfStatement: function (command, //es.IfStatement,
+        context, control, stash) {
+            control.push(...reduceConditional(command));
+        },
+        ExpressionStatement: function (command, //es.ExpressionStatement,
+        context, control, stash, isPrelude) {
+            cmdEvaluators[command.expression.type](command.expression, context, control, stash, isPrelude);
+        },
+        // DebuggerStatement: function (
+        //   command: es.DebuggerStatement,
+        //   context: Context
+        // ) {
+        //   context.runtime.break = true;
+        // },
+        VariableDeclaration: function (command, context, control) {
+            const declaration = command.declarations[0];
+            const id = declaration.id;
+            const init = declaration.init;
+            control.push(popInstr(command));
+            control.push(assmtInstr(id.name, command.kind === 'const', true, command));
+            control.push(init);
+        },
+        FunctionDeclaration: function (command, //es.FunctionDeclaration,
+        context, control) {
+            const lambdaExpression = blockArrowFunction(command.params, command.body, command.loc);
+            const lambdaDeclaration = constantDeclaration(command.id.name, lambdaExpression, command.loc);
+            control.push(lambdaDeclaration);
+        },
+        ReturnStatement: function (command, //as es.ReturnStatement,
+        context, control) {
+            const next = control.peek();
+            if (next && isInstr(next) && next.instrType === InstrType.MARKER) {
+                control.pop();
+            }
+            else {
+                control.push(resetInstr(command));
+            }
+            if (command.argument) {
+                control.push(command.argument);
+            }
+        },
+        // ContinueStatement: function (
+        //   command: es.ContinueStatement,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   control.push(instr.contInstr(command));
+        // },
+        // BreakStatement: function (
+        //   command: es.BreakStatement,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   control.push(instr.breakInstr(command));
+        // },
+        ImportDeclaration: function () { },
+        /**
+         * Expressions
+         */
+        Literal: function (command, //es.Literal
+        context, control, stash) {
+            const literalValue = command.value;
+            const bigintValue = command.bigint;
+            const complexValue = command.complex;
+            if (literalValue !== undefined) {
+                let value;
+                if (typeof literalValue === 'number') {
+                    value = { type: 'number', value: literalValue };
+                }
+                else if (typeof literalValue === 'string') {
+                    value = { type: 'string', value: literalValue };
+                }
+                else if (typeof literalValue === 'boolean') {
+                    value = { type: 'bool', value: literalValue };
+                    //value = literalValue;
+                }
+                else {
+                    //handleRuntimeError(context, new CseError('Unsupported literal type'));
+                    return;
+                }
+                stash.push(value);
+            }
+            else if (bigintValue !== undefined) {
+                let fixedBigintValue = bigintValue.toString().replace(/_/g, "");
+                let value;
+                try {
+                    value = { type: 'bigint', value: BigInt(fixedBigintValue) };
+                }
+                catch (e) {
+                    //handleRuntimeError(context, new CseError('Invalid BigInt literal'));
+                    return;
+                }
+                stash.push(value);
+            }
+            else if (complexValue !== undefined) {
+                let value;
+                let pyComplexNumber = new PyComplexNumber(complexValue.real, complexValue.imag);
+                try {
+                    value = { type: 'complex', value: pyComplexNumber };
+                }
+                catch (e) {
+                    //handleRuntimeError(context, new CseError('Invalid BigInt literal'));
+                    return;
+                }
+                stash.push(value);
+            }
+            else ;
+        },
+        NoneType: function (command, //es.Literal
+        context, control, stash) {
+            stash.push({ type: 'NoneType', value: undefined });
+        },
+        // AssignmentExpression: function (
+        //   command: es.AssignmentExpression,
+        //   context: Context,
+        //   control: Control
+        // ) {
+        //   if (command.left.type === 'MemberExpression') {
+        //     control.push(instr.arrAssmtInstr(command));
+        //     control.push(command.right);
+        //     control.push(command.left.property);
+        //     control.push(command.left.object);
+        //   } else if (command.left.type === 'Identifier') {
+        //     const id = command.left;
+        //     control.push(instr.assmtInstr(id.name, false, false, command));
+        //     control.push(command.right);
+        //   }
+        // },
+        // ArrayExpression: function (
+        //   command: es.ArrayExpression,
+        //   context: Context,
+        //   control: Control
+        // ) {
+        //   const elems = command.elements as es.Expression[];
+        //   reverse(elems);
+        //   const len = elems.length;
+        //   control.push(instr.arrLitInstr(len, command));
+        //   for (const elem of elems) {
+        //     control.push(elem);
+        //   }
+        // },
+        // MemberExpression: function (
+        //   command: es.MemberExpression,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   control.push(instr.arrAccInstr(command));
+        //   control.push(command.property);
+        //   control.push(command.object);
+        // },
+        ConditionalExpression: function (command, //es.ConditionalExpression,
+        context, control, stash) {
+            control.push(...reduceConditional(command));
+        },
+        Identifier: function (command, //es.Identifier,
+        context, control, stash) {
+            if (builtInConstants.has(command.name)) {
+                const builtinCons = builtInConstants.get(command.name);
+                try {
+                    stash.push(builtinCons);
+                    return;
+                }
+                catch (error) {
+                    // Error
+                    if (error instanceof Error) {
+                        throw new Error(error.message);
+                    }
+                    else {
+                        throw new Error();
+                    }
+                    // if (error instanceof RuntimeSourceError) {
+                    //   throw error;
+                    // } else {
+                    //   throw new RuntimeSourceError(`Error in builtin function ${funcName}: ${error}`);
+                    // }
+                }
+            }
+            else {
+                stash.push(getVariable(context, command.name));
+            }
+        },
+        UnaryExpression: function (command, //es.UnaryExpression,
+        context, control) {
+            control.push(unOpInstr(command.operator, command));
+            control.push(command.argument);
+        },
+        BinaryExpression: function (command, //es.BinaryExpression,
+        context, control) {
+            // currently for if statement
+            control.push(binOpInstr(command.operator, command));
+            control.push(command.right);
+            control.push(command.left);
+        },
+        LogicalExpression: function (command, //es.LogicalExpression,
+        context, control) {
+            if (command.operator === '&&') {
+                control.push(conditionalExpression(command.left, command.right, literal(false), command.loc));
+            }
+            else {
+                control.push(conditionalExpression(command.left, literal(true), command.right, command.loc));
+            }
+        },
+        ArrowFunctionExpression: function (command, //es.ArrowFunctionExpression,
+        context, control, stash, isPrelude) {
+            const closure = Closure.makeFromArrowFunction(command, currentEnvironment(context), context, true, isPrelude);
+            stash.push(closure);
+        },
+        CallExpression: function (command, //es.CallExpression,
+        context, control) {
+            // add
+            if (isIdentifier(command.callee)) {
+                let name = command.callee.name;
+                if (name === '__py_adder' || name === '__py_minuser' ||
+                    name === '__py_multiplier' || name === '__py_divider' ||
+                    name === '__py_modder' || name === '__py_floorer' ||
+                    name === '__py_powerer') {
+                    control.push(binOpInstr(command.callee, command));
+                    control.push(command.arguments[1]);
+                    control.push(command.arguments[0]);
+                    return;
+                }
+            }
+            control.push(appInstr(command.arguments.length, command));
+            for (let index = command.arguments.length - 1; index >= 0; index--) {
+                control.push(command.arguments[index]);
+            }
+            control.push(command.callee);
+        },
+        // /**
+        //  * Instructions
+        //  */
+        [InstrType.RESET]: function (command, //Instr,
+        context, control, stash) {
+            const cmdNext = control.pop();
+            if (cmdNext && (isNode(cmdNext) || cmdNext.instrType !== InstrType.MARKER)) {
+                control.push(resetInstr(command.srcNode));
+            }
+        },
+        // [InstrType.WHILE]: function (
+        //   command: WhileInstr,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   const test = stash.pop();
+        //   const error = rttc.checkIfStatement(command.srcNode, test, context.chapter);
+        //   if (error) {
+        //     handleRuntimeError(context, error);
+        //   }
+        //   if (test) {
+        //     control.push(command);
+        //     control.push(command.test);
+        //     if (hasContinueStatement(command.body as es.BlockStatement)) {
+        //       control.push(instr.contMarkerInstr(command.srcNode));
+        //     }
+        //     if (!valueProducing(command.body)) {
+        //       control.push(ast.identifier('undefined', command.body.loc));
+        //     }
+        //     control.push(command.body);
+        //     control.push(instr.popInstr(command.srcNode)); // Pop previous body value
+        //   }
+        // },
+        // [InstrType.FOR]: function (
+        //   command: ForInstr,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   const test = stash.pop();
+        //   const error = rttc.checkIfStatement(command.srcNode, test, context.chapter);
+        //   if (error) {
+        //     handleRuntimeError(context, error);
+        //   }
+        //   if (test) {
+        //     control.push(command);
+        //     control.push(command.test);
+        //     control.push(instr.popInstr(command.srcNode)); // Pop value from update
+        //     control.push(command.update);
+        //     if (hasContinueStatement(command.body as es.BlockStatement)) {
+        //       control.push(instr.contMarkerInstr(command.srcNode));
+        //     }
+        //     if (!valueProducing(command.body)) {
+        //       control.push(ast.identifier('undefined', command.body.loc));
+        //     }
+        //     control.push(command.body);
+        //     control.push(instr.popInstr(command.srcNode)); // Pop previous body value
+        //   }
+        // },
+        [InstrType.ASSIGNMENT]: function (command, //AssmtInstr,
+        context, control, stash) {
+            if (command.declaration) {
+                //if ()
+                defineVariable(context, command.symbol, stash.peek(), command.constant, command.srcNode);
+            }
+        },
+        [InstrType.UNARY_OP]: function (command, //UnOpInstr,
+        context, control, stash) {
+            const argument = stash.pop();
+            // const error = rttc.checkUnaryExpression(
+            //   command.srcNode,
+            //   command.symbol as es.UnaryOperator,
+            //   argument,
+            //   context.chapter
+            // );
+            // if (error) {
+            //   handleRuntimeError(context, error);
+            // }
+            stash.push(evaluateUnaryExpression(command.symbol, argument));
+        },
+        [InstrType.BINARY_OP]: function (command, //BinOpInstr,
+        context, control, stash) {
+            const right = stash.pop();
+            const left = stash.pop();
+            // const error = rttc.checkBinaryExpression(
+            //   command.srcNode,
+            //   command.symbol as es.BinaryOperator,
+            //   context.chapter,
+            //   left,
+            //   right
+            // );
+            // if (error) {
+            //   handleRuntimeError(context, error);
+            // }
+            if ((left.type === 'string' && right.type !== 'string') ||
+                (left.type !== 'string' && right.type === 'string')) {
+                handleRuntimeError(context, new TypeConcatenateError(command));
+            }
+            stash.push(evaluateBinaryExpression(context, command.symbol, left, right));
+        },
+        [InstrType.POP]: function (command, //Instr,
+        context, control, stash) {
+            stash.pop();
+        },
+        [InstrType.APPLICATION]: function (command, //AppInstr,
+        context, control, stash) {
+            var _a;
+            const args = [];
+            for (let index = 0; index < command.numOfArgs; index++) {
+                args.unshift(stash.pop());
+            }
+            const func = stash.pop();
+            // continuation in python?
+            // func instanceof Closure
+            if (func instanceof Closure) {
+                // Check for number of arguments mismatch error
+                checkNumberOfArguments(command, context, func, args, command.srcNode);
+                const next = control.peek();
+                // Push ENVIRONMENT instruction if needed - if next control stack item
+                // exists and is not an environment instruction, OR the control only contains
+                // environment indepedent items
+                if (next &&
+                    !(isInstr(next) && next.instrType === InstrType.ENVIRONMENT) &&
+                    !control.canAvoidEnvInstr()) {
+                    control.push(envInstr(currentEnvironment(context), command.srcNode));
+                }
+                // Create environment for function parameters if the function isn't nullary.
+                // Name the environment if the function call expression is not anonymous
+                if (args.length > 0) {
+                    const environment = createEnvironment(context, func, args, command.srcNode);
+                    pushEnvironment(context, environment);
+                }
+                else {
+                    context.runtime.environments.unshift(func.environment);
+                }
+                // Handle special case if function is simple
+                if (isSimpleFunction(func.node)) {
+                    // Closures convert ArrowExpressionStatements to BlockStatements
+                    const block = func.node.body;
+                    const returnStatement = block.body[0];
+                    control.push((_a = returnStatement.argument) !== null && _a !== void 0 ? _a : identifier('undefined', returnStatement.loc));
+                }
+                else {
+                    if (control.peek()) {
+                        // push marker if control not empty
+                        control.push(markerInstr(command.srcNode));
+                    }
+                    control.push(func.node.body);
+                    // console.info((func as Closure).node.body);
+                }
+                return;
+            }
+            // Value is a built-in function
+            let function_name = command.srcNode.callee.name;
+            if (builtIns.has(function_name)) {
+                const builtinFunc = builtIns.get(function_name);
+                try {
+                    stash.push(builtinFunc(args));
+                    return;
+                }
+                catch (error) {
+                    // Error
+                    if (error instanceof Error) {
+                        throw new Error(error.message);
+                    }
+                    else {
+                        throw new Error();
+                    }
+                    // if (error instanceof RuntimeSourceError) {
+                    //   throw error;
+                    // } else {
+                    //   throw new RuntimeSourceError(`Error in builtin function ${funcName}: ${error}`);
+                    // }
+                }
+            }
+        },
+        [InstrType.BRANCH]: function (command, //BranchInstr,
+        context, control, stash) {
+            const test = stash.pop();
+            // const error = rttc.checkIfStatement(command.srcNode, test, context.chapter);
+            // if (error) {
+            //   handleRuntimeError(context, error);
+            // }
+            if (test.value) {
+                if (!valueProducing(command.consequent)) {
+                    control.push(identifier('undefined', command.consequent.loc));
+                }
+                command.consequent.skipEnv = true;
+                control.push(command.consequent);
+            }
+            else if (command.alternate) {
+                if (!valueProducing(command.alternate)) {
+                    control.push(identifier('undefined', command.alternate.loc));
+                }
+                command.alternate.skipEnv = true;
+                control.push(command.alternate);
+            }
+            else {
+                control.push(identifier('undefined', command.srcNode.loc));
+            }
+        },
+        [InstrType.ENVIRONMENT]: function (command, //EnvInstr,
+        context) {
+            while (currentEnvironment(context).id !== command.env.id) {
+                popEnvironment(context);
+            }
+        },
+        // [InstrType.ARRAY_LITERAL]: function (
+        //   command: ArrLitInstr,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   const arity = command.arity;
+        //   const array: any[] = [];
+        //   for (let i = 0; i < arity; ++i) {
+        //     array.unshift(stash.pop());
+        //   }
+        //   handleArrayCreation(context, array);
+        //   stash.push(array);
+        // },
+        // [InstrType.ARRAY_ACCESS]: function (
+        //   command: Instr,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   const index = stash.pop();
+        //   const array = stash.pop();
+        //   stash.push(array[index]);
+        // },
+        // [InstrType.ARRAY_ASSIGNMENT]: function (
+        //   command: Instr,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   const value = stash.pop();
+        //   const index = stash.pop();
+        //   const array = stash.pop();
+        //   array[index] = value;
+        //   stash.push(value);
+        // },
+        // [InstrType.CONTINUE]: function (
+        //   command: Instr,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   const next = control.pop() as ControlItem;
+        //   if (isInstr(next) && next.instrType === InstrType.CONTINUE_MARKER) {
+        //   } else if (isInstr(next) && next.instrType === InstrType.ENVIRONMENT) {
+        //     control.push(command);
+        //     control.push(next); 
+        //   } else {
+        //     control.push(command);
+        //   }
+        // },
+        // [InstrType.CONTINUE_MARKER]: function () {
+        // },
+        // [InstrType.BREAK]: function (
+        //   command: Instr,
+        //   context: Context,
+        //   control: Control,
+        //   stash: Stash
+        // ) {
+        //   const next = control.pop() as ControlItem;
+        //   if (isInstr(next) && next.instrType === InstrType.BREAK_MARKER) {
+        //   } else if (isInstr(next) && next.instrType === InstrType.ENVIRONMENT) {
+        //     control.push(command);
+        //     control.push(next);
+        //   } else {
+        //     control.push(command);
+        //   }
+        // },
+        // [InstrType.BREAK_MARKER]: function () {
+        // }
+    };
 
     // npm install mathjs
     /*
@@ -25094,933 +23788,2241 @@
         //return { type: 'string', value: output };
     }
 
-    class CseError {
-        constructor(message) {
-            this.message = message;
+    class CSEBreak {
+    }
+    // export class CseError {
+    //     constructor(public readonly error: any) {}
+    // }
+    var ErrorType;
+    (function (ErrorType) {
+        ErrorType["IMPORT"] = "Import";
+        ErrorType["RUNTIME"] = "Runtime";
+        ErrorType["SYNTAX"] = "Syntax";
+        ErrorType["TYPE"] = "Type";
+    })(ErrorType || (ErrorType = {}));
+    var ErrorSeverity;
+    (function (ErrorSeverity) {
+        ErrorSeverity["WARNING"] = "Warning";
+        ErrorSeverity["ERROR"] = "Error";
+    })(ErrorSeverity || (ErrorSeverity = {}));
+    class PyComplexNumber {
+        constructor(real, imag) {
+            this.real = real;
+            this.imag = imag;
+        }
+        static fromNumber(value) {
+            return new PyComplexNumber(value, 0);
+        }
+        static fromBigInt(value) {
+            return new PyComplexNumber(Number(value), 0);
+        }
+        static fromString(str) {
+            if (!/[jJ]/.test(str)) {
+                const realVal = Number(str);
+                if (isNaN(realVal)) {
+                    throw new Error(`Invalid complex string: ${str}`);
+                }
+                return new PyComplexNumber(realVal, 0);
+            }
+            const lower = str.toLowerCase();
+            if (lower.endsWith('j')) {
+                const numericPart = str.substring(0, str.length - 1);
+                if (numericPart === '' || numericPart === '+' || numericPart === '-') {
+                    const sign = (numericPart === '-') ? -1 : 1;
+                    return new PyComplexNumber(0, sign * 1);
+                }
+                const imagVal = Number(numericPart);
+                if (isNaN(imagVal)) {
+                    throw new Error(`Invalid complex string: ${str}`);
+                }
+                return new PyComplexNumber(0, imagVal);
+            }
+            const match = str.match(/^([\+\-]?\d+(\.\d+)?([eE][+\-]?\d+)?)([\+\-]\d+(\.\d+)?([eE][+\-]?\d+)?)?[jJ]?$/);
+            if (!match) {
+                throw new Error(`Invalid complex string: ${str}`);
+            }
+            const realPart = Number(match[1]);
+            let imagPart = 0;
+            if (match[4]) {
+                imagPart = Number(match[4]);
+            }
+            return new PyComplexNumber(realPart, imagPart);
+        }
+        static fromValue(value) {
+            if (value instanceof PyComplexNumber) {
+                return new PyComplexNumber(value.real, value.imag);
+            }
+            if (typeof value === "number") {
+                return PyComplexNumber.fromNumber(value);
+            }
+            if (typeof value === "bigint") {
+                return PyComplexNumber.fromBigInt(value);
+            }
+            return PyComplexNumber.fromString(value);
+        }
+        /**
+         * operations
+         */
+        add(other) {
+            return new PyComplexNumber(this.real + other.real, this.imag + other.imag);
+        }
+        sub(other) {
+            return new PyComplexNumber(this.real - other.real, this.imag - other.imag);
+        }
+        mul(other) {
+            // (a+bi)*(c+di) = (ac - bd) + (bc + ad)i
+            const realPart = this.real * other.real - this.imag * other.imag;
+            const imagPart = this.real * other.imag + this.imag * other.real;
+            return new PyComplexNumber(realPart, imagPart);
+        }
+        // https://github.com/python/cpython/blob/main/Objects/complexobject.c#L986
+        // In the CPython source code, a branch algorithm is used for complex division.
+        // It first compares the magnitudes of the dividend and divisor, and if some components are too large or too small, 
+        // appropriate scaling is applied before performing the operation. 
+        // This approach can significantly reduce overflow or underflow, thereby ensuring that the results remain more consistent with Python.
+        div(other) {
+            // (a+bi)/(c+di) = ((a+bi)*(c-di)) / (c^2 + d^2)
+            const denominator = other.real * other.real + other.imag * other.imag;
+            if (denominator === 0) {
+                throw new Error(`Division by zero in complex number.`);
+            }
+            const a = this.real;
+            const b = this.imag;
+            const c = other.real;
+            const d = other.imag;
+            const absC = Math.abs(c);
+            const absD = Math.abs(d);
+            let real;
+            let imag;
+            if (absD < absC) {
+                const ratio = d / c;
+                const denom = c + d * ratio; // c + d*(d/c) = c + d^2/c
+                real = (a + b * ratio) / denom;
+                imag = (b - a * ratio) / denom;
+            }
+            else {
+                const ratio = c / d;
+                const denom = d + c * ratio; // d + c*(c/d) = d + c^2/d
+                real = (a * ratio + b) / denom;
+                imag = (b * ratio - a) / denom;
+            }
+            return new PyComplexNumber(real, imag);
+            //const numerator = this.mul(new PyComplexNumber(other.real, -other.imag));
+            //return new PyComplexNumber(numerator.real / denominator, numerator.imag / denominator);
+        }
+        pow(other) {
+            // z = this (a+bi), w = other (A+Bi)
+            const a = this.real;
+            const b = this.imag;
+            const A = other.real;
+            const B = other.imag;
+            const r = Math.sqrt(a * a + b * b);
+            const theta = Math.atan2(b, a);
+            if (r === 0) {
+                // In Python, raising 0 to a negative or complex power raises an error.
+                // For example, 0**(1j) in CPython directly raises ValueError: complex power.
+                if (A < 0 || B !== 0) {
+                    throw new Error('0 cannot be raised to a negative or complex power');
+                }
+                // Otherwise, 0**(positive number) = 0.
+                return new PyComplexNumber(0, 0);
+            }
+            const logR = Math.log(r);
+            // realExpPart = A*ln(r) - B*theta
+            // imagExpPart = B*ln(r) + A*theta
+            const realExpPart = A * logR - B * theta;
+            const imagExpPart = B * logR + A * theta;
+            // e^(x + i y) = e^x [cos(y) + i sin(y)]
+            const expOfReal = Math.exp(realExpPart);
+            const c = expOfReal * Math.cos(imagExpPart);
+            const d = expOfReal * Math.sin(imagExpPart);
+            return new PyComplexNumber(c, d);
+        }
+        toString() {
+            if (this.real === 0) {
+                return `${this.imag}j`;
+            }
+            // if (this.imag === 0) {
+            //     return `${this.real}`;
+            // }
+            const sign = (this.imag >= 0) ? "+" : "";
+            // return `(${this.real}${sign}${this.imag}j)`;
+            return `(${this.toPythonComplexFloat(this.real)}${sign}${this.toPythonComplexFloat(this.imag)}j)`;
+        }
+        toPythonComplexFloat(num) {
+            if (num === Infinity) {
+                return "inf";
+            }
+            if (num === -Infinity) {
+                return "-inf";
+            }
+            if (Math.abs(num) >= 1e16 || (num !== 0 && Math.abs(num) < 1e-4)) {
+                return num.toExponential().replace(/e([+-])(\d)$/, 'e$10$2');
+            }
+            return num.toString();
+        }
+        equals(other) {
+            return (Number(this.real) === Number(other.real) && Number(this.imag) === Number(other.imag));
+        }
+    }
+    // export class Representation {
+    //     constructor(public representation: string) {}
+    //     toString() {
+    //         return this.representation
+    //     }
+    // }
+    class Representation {
+        constructor(representation) {
+            this.representation = representation;
+        }
+        toString(value) {
+            // call str(value) in stdlib
+            // TODO: mapping
+            const result = toPythonString(value);
+            return result;
         }
     }
 
-    /**
-     * Python style dictionary
-     */
-    class Dict {
-        constructor(internalMap = new Map()) {
-            this.internalMap = internalMap;
-        }
-        get size() {
-            return this.internalMap.size;
-        }
-        [Symbol.iterator]() {
-            return this.internalMap[Symbol.iterator]();
-        }
-        get(key) {
-            return this.internalMap.get(key);
-        }
-        set(key, value) {
-            return this.internalMap.set(key, value);
-        }
-        has(key) {
-            return this.internalMap.has(key);
-        }
-        /**
-         * Similar to how the python dictionary's setdefault function works:
-         * If the key is not present, it is set to the given value, then that value is returned
-         * Otherwise, `setdefault` returns the value stored in the dictionary without
-         * modifying it
-         */
-        setdefault(key, value) {
-            if (!this.has(key)) {
-                this.set(key, value);
+    var ExprNS;
+    (function (ExprNS) {
+        class Expr {
+            constructor(startToken, endToken) {
+                this.startToken = startToken;
+                this.endToken = endToken;
             }
-            return this.get(key);
         }
-        update(key, defaultVal, updater) {
-            const value = this.setdefault(key, defaultVal);
-            const newValue = updater(value);
-            this.set(key, newValue);
-            return newValue;
+        ExprNS.Expr = Expr;
+        class None extends Expr {
+            constructor(startToken, endToken, value = "None") {
+                super(startToken, endToken);
+            }
+            accept(visitor) {
+                return visitor.visitNoneExpr(this);
+            }
         }
-        entries() {
-            return [...this.internalMap.entries()];
+        ExprNS.None = None;
+        class BigIntLiteral extends Expr {
+            constructor(startToken, endToken, value) {
+                super(startToken, endToken);
+                this.value = value;
+            }
+            accept(visitor) {
+                return visitor.visitBigIntLiteralExpr(this);
+            }
         }
-        forEach(func) {
-            this.internalMap.forEach((v, k) => func(k, v));
+        ExprNS.BigIntLiteral = BigIntLiteral;
+        class Complex extends Expr {
+            constructor(startToken, endToken, value) {
+                super(startToken, endToken);
+                this.value = PyComplexNumber.fromString(value);
+            }
+            accept(visitor) {
+                return visitor.visitComplexExpr(this);
+            }
         }
-        /**
-         * Similar to `mapAsync`, but for an async mapping function that does not return any value
-         */
-        forEachAsync(func) {
-            return __awaiter(this, void 0, void 0, function* () {
-                yield Promise.all(this.map((key, value, i) => func(key, value, i)));
-            });
+        ExprNS.Complex = Complex;
+        class Binary extends Expr {
+            constructor(startToken, endToken, left, operator, right) {
+                super(startToken, endToken);
+                this.left = left;
+                this.operator = operator;
+                this.right = right;
+            }
+            accept(visitor) {
+                return visitor.visitBinaryExpr(this);
+            }
         }
-        map(func) {
-            return this.entries().map(([k, v], i) => func(k, v, i));
+        ExprNS.Binary = Binary;
+        class Compare extends Expr {
+            constructor(startToken, endToken, left, operator, right) {
+                super(startToken, endToken);
+                this.left = left;
+                this.operator = operator;
+                this.right = right;
+            }
+            accept(visitor) {
+                return visitor.visitCompareExpr(this);
+            }
         }
-        /**
-         * Using a mapping function that returns a promise, transform a map
-         * to another map with different keys and values. All calls to the mapping function
-         * execute asynchronously
-         */
-        mapAsync(func) {
-            return Promise.all(this.map((key, value, i) => func(key, value, i)));
+        ExprNS.Compare = Compare;
+        class BoolOp extends Expr {
+            constructor(startToken, endToken, left, operator, right) {
+                super(startToken, endToken);
+                this.left = left;
+                this.operator = operator;
+                this.right = right;
+            }
+            accept(visitor) {
+                return visitor.visitBoolOpExpr(this);
+            }
         }
-        flatMap(func) {
-            return this.entries().flatMap(([k, v], i) => func(k, v, i));
+        ExprNS.BoolOp = BoolOp;
+        class Grouping extends Expr {
+            constructor(startToken, endToken, expression) {
+                super(startToken, endToken);
+                this.expression = expression;
+            }
+            accept(visitor) {
+                return visitor.visitGroupingExpr(this);
+            }
         }
-    }
-    /**
-     * Convenience class for maps that store an array of values
-     */
-    class ArrayMap extends Dict {
-        add(key, item) {
-            this.setdefault(key, []).push(item);
+        ExprNS.Grouping = Grouping;
+        class Literal extends Expr {
+            constructor(startToken, endToken, value) {
+                super(startToken, endToken);
+                this.value = value;
+            }
+            accept(visitor) {
+                return visitor.visitLiteralExpr(this);
+            }
         }
-    }
-    function filterImportDeclarations({ body }) {
-        return body.reduce(([importNodes, otherNodes], node) => {
-            if (!isImportDeclaration(node))
-                return [importNodes, [...otherNodes, node]];
-            const moduleName = getModuleDeclarationSource(node);
-            importNodes.add(moduleName, node);
-            return [importNodes, otherNodes];
-        }, [new ArrayMap(), []]);
+        ExprNS.Literal = Literal;
+        class Unary extends Expr {
+            constructor(startToken, endToken, operator, right) {
+                super(startToken, endToken);
+                this.operator = operator;
+                this.right = right;
+            }
+            accept(visitor) {
+                return visitor.visitUnaryExpr(this);
+            }
+        }
+        ExprNS.Unary = Unary;
+        class Ternary extends Expr {
+            constructor(startToken, endToken, predicate, consequent, alternative) {
+                super(startToken, endToken);
+                this.predicate = predicate;
+                this.consequent = consequent;
+                this.alternative = alternative;
+            }
+            accept(visitor) {
+                return visitor.visitTernaryExpr(this);
+            }
+        }
+        ExprNS.Ternary = Ternary;
+        class Lambda extends Expr {
+            constructor(startToken, endToken, parameters, body) {
+                super(startToken, endToken);
+                this.parameters = parameters;
+                this.body = body;
+            }
+            accept(visitor) {
+                return visitor.visitLambdaExpr(this);
+            }
+        }
+        ExprNS.Lambda = Lambda;
+        class MultiLambda extends Expr {
+            constructor(startToken, endToken, parameters, body, varDecls) {
+                super(startToken, endToken);
+                this.parameters = parameters;
+                this.body = body;
+                this.varDecls = varDecls;
+            }
+            accept(visitor) {
+                return visitor.visitMultiLambdaExpr(this);
+            }
+        }
+        ExprNS.MultiLambda = MultiLambda;
+        class Variable extends Expr {
+            constructor(startToken, endToken, name) {
+                super(startToken, endToken);
+                this.name = name;
+            }
+            accept(visitor) {
+                return visitor.visitVariableExpr(this);
+            }
+        }
+        ExprNS.Variable = Variable;
+        class Call extends Expr {
+            constructor(startToken, endToken, callee, args) {
+                super(startToken, endToken);
+                this.callee = callee;
+                this.args = args;
+            }
+            accept(visitor) {
+                return visitor.visitCallExpr(this);
+            }
+        }
+        ExprNS.Call = Call;
+    })(ExprNS || (ExprNS = {}));
+    var StmtNS;
+    (function (StmtNS) {
+        class Stmt {
+            constructor(startToken, endToken) {
+                this.startToken = startToken;
+                this.endToken = endToken;
+            }
+        }
+        StmtNS.Stmt = Stmt;
+        class Indent extends Stmt {
+            constructor(startToken, endToken) {
+                super(startToken, endToken);
+            }
+            accept(visitor) {
+                return visitor.visitIndentCreation(this);
+            }
+        }
+        StmtNS.Indent = Indent;
+        class Dedent extends Stmt {
+            constructor(startToken, endToken) {
+                super(startToken, endToken);
+            }
+            accept(visitor) {
+                return visitor.visitDedentCreation(this);
+            }
+        }
+        StmtNS.Dedent = Dedent;
+        class Pass extends Stmt {
+            constructor(startToken, endToken) {
+                super(startToken, endToken);
+            }
+            accept(visitor) {
+                return visitor.visitPassStmt(this);
+            }
+        }
+        StmtNS.Pass = Pass;
+        class Assign extends Stmt {
+            constructor(startToken, endToken, name, value) {
+                super(startToken, endToken);
+                this.name = name;
+                this.value = value;
+            }
+            accept(visitor) {
+                return visitor.visitAssignStmt(this);
+            }
+        }
+        StmtNS.Assign = Assign;
+        class AnnAssign extends Stmt {
+            constructor(startToken, endToken, name, value, ann) {
+                super(startToken, endToken);
+                this.name = name;
+                this.value = value;
+                this.ann = ann;
+            }
+            accept(visitor) {
+                return visitor.visitAnnAssignStmt(this);
+            }
+        }
+        StmtNS.AnnAssign = AnnAssign;
+        class Break extends Stmt {
+            constructor(startToken, endToken) {
+                super(startToken, endToken);
+            }
+            accept(visitor) {
+                return visitor.visitBreakStmt(this);
+            }
+        }
+        StmtNS.Break = Break;
+        class Continue extends Stmt {
+            constructor(startToken, endToken) {
+                super(startToken, endToken);
+            }
+            accept(visitor) {
+                return visitor.visitContinueStmt(this);
+            }
+        }
+        StmtNS.Continue = Continue;
+        class Return extends Stmt {
+            constructor(startToken, endToken, value) {
+                super(startToken, endToken);
+                this.value = value;
+            }
+            accept(visitor) {
+                return visitor.visitReturnStmt(this);
+            }
+        }
+        StmtNS.Return = Return;
+        class FromImport extends Stmt {
+            constructor(startToken, endToken, module, names) {
+                super(startToken, endToken);
+                this.module = module;
+                this.names = names;
+            }
+            accept(visitor) {
+                return visitor.visitFromImportStmt(this);
+            }
+        }
+        StmtNS.FromImport = FromImport;
+        class Global extends Stmt {
+            constructor(startToken, endToken, name) {
+                super(startToken, endToken);
+                this.name = name;
+            }
+            accept(visitor) {
+                return visitor.visitGlobalStmt(this);
+            }
+        }
+        StmtNS.Global = Global;
+        class NonLocal extends Stmt {
+            constructor(startToken, endToken, name) {
+                super(startToken, endToken);
+                this.name = name;
+            }
+            accept(visitor) {
+                return visitor.visitNonLocalStmt(this);
+            }
+        }
+        StmtNS.NonLocal = NonLocal;
+        class Assert extends Stmt {
+            constructor(startToken, endToken, value) {
+                super(startToken, endToken);
+                this.value = value;
+            }
+            accept(visitor) {
+                return visitor.visitAssertStmt(this);
+            }
+        }
+        StmtNS.Assert = Assert;
+        class If extends Stmt {
+            constructor(startToken, endToken, condition, body, elseBlock) {
+                super(startToken, endToken);
+                this.condition = condition;
+                this.body = body;
+                this.elseBlock = elseBlock;
+            }
+            accept(visitor) {
+                return visitor.visitIfStmt(this);
+            }
+        }
+        StmtNS.If = If;
+        class While extends Stmt {
+            constructor(startToken, endToken, condition, body) {
+                super(startToken, endToken);
+                this.condition = condition;
+                this.body = body;
+            }
+            accept(visitor) {
+                return visitor.visitWhileStmt(this);
+            }
+        }
+        StmtNS.While = While;
+        class For extends Stmt {
+            constructor(startToken, endToken, target, iter, body) {
+                super(startToken, endToken);
+                this.target = target;
+                this.iter = iter;
+                this.body = body;
+            }
+            accept(visitor) {
+                return visitor.visitForStmt(this);
+            }
+        }
+        StmtNS.For = For;
+        class FunctionDef extends Stmt {
+            constructor(startToken, endToken, name, parameters, body, varDecls) {
+                super(startToken, endToken);
+                this.name = name;
+                this.parameters = parameters;
+                this.body = body;
+                this.varDecls = varDecls;
+            }
+            accept(visitor) {
+                return visitor.visitFunctionDefStmt(this);
+            }
+        }
+        StmtNS.FunctionDef = FunctionDef;
+        class SimpleExpr extends Stmt {
+            constructor(startToken, endToken, expression) {
+                super(startToken, endToken);
+                this.expression = expression;
+            }
+            accept(visitor) {
+                return visitor.visitSimpleExprStmt(this);
+            }
+        }
+        StmtNS.SimpleExpr = SimpleExpr;
+        class FileInput extends Stmt {
+            constructor(startToken, endToken, statements, varDecls) {
+                super(startToken, endToken);
+                this.statements = statements;
+                this.varDecls = varDecls;
+            }
+            accept(visitor) {
+                return visitor.visitFileInputStmt(this);
+            }
+        }
+        StmtNS.FileInput = FileInput;
+    })(StmtNS || (StmtNS = {}));
+
+    /*
+    * Full disclosure: some of the functions and general layout of the file is
+    * from my own implementation of a parser
+    * in Rust.
+    * https://github.com/Fidget-Spinner/crafting_interpreters/blob/main/rust/src/parser.rs
+    *
+    * That is in turn an implementation of the book "Crafting Interpreters" by
+    * Robert Nystrom, which implements an interpreter in Java.
+    * https://craftinginterpreters.com/parsing-expressions.html.
+    * I've included the MIT license that code snippets from
+    * the book is licensed under down below. See
+    * https://github.com/munificent/craftinginterpreters/blob/master/LICENSE
+    *
+    *
+    * My changes:
+    *   - The book was written in Java. I have written this in TypeScript.
+    *   - My Rust implementation uses pattern matching, but the visitor pattern is
+    *     used here.
+    *   - Additionally, the production rules are completely different
+    *     from the book as a whole different language is being parsed.
+    *
+    *
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to
+        deal in the Software without restriction, including without limitation the
+        rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+        sell copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+
+        The above copyright notice and this permission notice shall be included in
+        all copies or substantial portions of the Software.
+
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+        FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+        IN THE SOFTWARE.
+    **/
+    const PSEUD_NAMES = [
+        TokenType.TRUE,
+        TokenType.FALSE,
+        TokenType.NONE,
+    ];
+    class Parser {
+        constructor(source, tokens) {
+            this.source = source;
+            this.tokens = tokens;
+            this.current = 0;
+        }
+        // Consumes tokens while tokenTypes matches.
+        match(...tokenTypes) {
+            for (const tokenType of tokenTypes) {
+                if (this.check(tokenType)) {
+                    this.advance();
+                    return true;
+                }
+            }
+            return false;
+        }
+        check(...type) {
+            if (this.isAtEnd()) {
+                return false;
+            }
+            for (const tokenType of type) {
+                if (this.peek().type === tokenType) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        advance() {
+            if (!this.isAtEnd()) {
+                this.current += 1;
+            }
+            return this.previous();
+        }
+        isAtEnd() {
+            return this.peek().type === TokenType.ENDMARKER;
+        }
+        peek() {
+            return this.tokens[this.current];
+        }
+        previous() {
+            return this.tokens[this.current - 1];
+        }
+        consume(type, message) {
+            if (this.check(type))
+                return this.advance();
+            const token = this.tokens[this.current];
+            throw new exports.ParserErrors.ExpectedTokenError(this.source, token, message);
+        }
+        synchronize() {
+            this.advance();
+            while (!this.isAtEnd()) {
+                if (this.match(TokenType.NEWLINE)) {
+                    return false;
+                }
+                if (this.match(TokenType.FOR, TokenType.WHILE, TokenType.DEF, TokenType.IF, TokenType.ELIF, TokenType.ELSE, TokenType.RETURN)) {
+                    return true;
+                }
+                this.advance();
+            }
+            return false;
+        }
+        parse() {
+            return this.file_input();
+            // return this.expression();
+        }
+        //// THE NAMES OF THE FOLLOWING FUNCTIONS FOLLOW THE PRODUCTION RULES IN THE GRAMMAR.
+        //// HENCE THEIR NAMES MIGHT NOT BE COMPLIANT WITH CAMELCASE
+        file_input() {
+            const startToken = this.peek();
+            const statements = [];
+            while (!this.isAtEnd()) {
+                if (this.match(TokenType.NEWLINE) || this.match(TokenType.DEDENT)) {
+                    continue;
+                }
+                statements.push(this.stmt());
+            }
+            const endToken = this.peek();
+            return new StmtNS.FileInput(startToken, endToken, statements, []);
+        }
+        stmt() {
+            if (this.check(TokenType.DEF, TokenType.FOR, TokenType.IF, TokenType.WHILE)) {
+                return this.compound_stmt();
+            }
+            else if (this.check(TokenType.NAME, ...PSEUD_NAMES, TokenType.NUMBER, TokenType.PASS, TokenType.BREAK, TokenType.CONTINUE, TokenType.MINUS, TokenType.PLUS, TokenType.INDENT, TokenType.DEDENT, TokenType.RETURN, TokenType.FROM, TokenType.GLOBAL, TokenType.NONLOCAL, TokenType.ASSERT, TokenType.LPAR, TokenType.STRING, TokenType.BIGINT, ...SPECIAL_IDENTIFIER_TOKENS)) {
+                return this.simple_stmt();
+            }
+            const startToken = this.peek();
+            const endToken = this.synchronize() ? this.previous() : this.peek();
+            try {
+                this.parse_invalid(startToken, endToken);
+            }
+            catch (e) {
+                if (e instanceof exports.ParserErrors.BaseParserError) {
+                    throw (e);
+                }
+            }
+            throw new exports.ParserErrors.GenericUnexpectedSyntaxError(startToken.line, startToken.col, this.source, startToken.indexInSource, endToken.indexInSource);
+        }
+        compound_stmt() {
+            if (this.match(TokenType.IF)) {
+                return this.if_stmt();
+            }
+            else if (this.match(TokenType.WHILE)) {
+                return this.while_stmt();
+            }
+            else if (this.match(TokenType.FOR)) {
+                return this.for_stmt();
+            }
+            else if (this.match(TokenType.DEF)) {
+                return this.funcdef();
+            }
+            throw new Error("Unreachable code path");
+        }
+        if_stmt() {
+            const startToken = this.previous();
+            let start = this.previous();
+            let cond = this.test();
+            this.consume(TokenType.COLON, "Expected ':' after if");
+            let block = this.suite();
+            let elseStmt = null;
+            if (this.match(TokenType.ELIF)) {
+                elseStmt = [this.if_stmt()];
+            }
+            else if (this.match(TokenType.ELSE)) {
+                this.consume(TokenType.COLON, "Expect ':' after else");
+                elseStmt = this.suite();
+            }
+            else {
+                throw new exports.ParserErrors.NoElseBlockError(this.source, start);
+            }
+            const endToken = this.previous();
+            return new StmtNS.If(startToken, endToken, cond, block, elseStmt);
+        }
+        while_stmt() {
+            const startToken = this.peek();
+            let cond = this.test();
+            this.consume(TokenType.COLON, "Expected ':' after while");
+            let block = this.suite();
+            const endToken = this.previous();
+            return new StmtNS.While(startToken, endToken, cond, block);
+        }
+        for_stmt() {
+            const startToken = this.peek();
+            let target = this.advance();
+            this.consume(TokenType.IN, "Expected in after for");
+            let iter = this.test();
+            this.consume(TokenType.COLON, "Expected ':' after for");
+            let block = this.suite();
+            const endToken = this.previous();
+            return new StmtNS.For(startToken, endToken, target, iter, block);
+        }
+        funcdef() {
+            const startToken = this.peek();
+            let name = this.advance();
+            let args = this.parameters();
+            this.consume(TokenType.COLON, "Expected ':' after def");
+            let block = this.suite();
+            const endToken = this.previous();
+            return new StmtNS.FunctionDef(startToken, endToken, name, args, block, []);
+        }
+        simple_stmt() {
+            const startToken = this.peek();
+            let res = null;
+            if (this.match(TokenType.NAME)) {
+                res = this.assign_stmt();
+            }
+            else if (this.match(TokenType.INDENT)) {
+                res = new StmtNS.Indent(startToken, startToken);
+            }
+            else if (this.match(TokenType.DEDENT)) {
+                res = new StmtNS.Dedent(startToken, startToken);
+            }
+            else if (this.match(TokenType.PASS)) {
+                res = new StmtNS.Pass(startToken, startToken);
+            }
+            else if (this.match(TokenType.BREAK)) {
+                res = new StmtNS.Break(startToken, startToken);
+            }
+            else if (this.match(TokenType.CONTINUE)) {
+                res = new StmtNS.Continue(startToken, startToken);
+            }
+            else if (this.match(TokenType.RETURN)) {
+                res = new StmtNS.Return(startToken, startToken, this.check(TokenType.NEWLINE) ? null : this.test());
+            }
+            else if (this.match(TokenType.FROM)) {
+                res = this.import_from();
+            }
+            else if (this.match(TokenType.GLOBAL)) {
+                res = new StmtNS.Global(startToken, startToken, this.advance());
+            }
+            else if (this.match(TokenType.NONLOCAL)) {
+                res = new StmtNS.NonLocal(startToken, startToken, this.advance());
+            }
+            else if (this.match(TokenType.ASSERT)) {
+                res = new StmtNS.Assert(startToken, startToken, this.test());
+            }
+            else if (this.check(TokenType.LPAR, TokenType.NUMBER, TokenType.STRING, TokenType.BIGINT, TokenType.MINUS, TokenType.PLUS, ...SPECIAL_IDENTIFIER_TOKENS)) {
+                res = new StmtNS.SimpleExpr(startToken, startToken, this.test());
+            }
+            else {
+                throw new Error("Unreachable code path");
+            }
+            this.consume(TokenType.NEWLINE, "Expected newline");
+            return res;
+        }
+        assign_stmt() {
+            const startToken = this.previous();
+            const name = this.previous();
+            if (this.check(TokenType.COLON)) {
+                const ann = this.test();
+                this.consume(TokenType.EQUAL, "Expect equal in assignment");
+                const expr = this.test();
+                return new StmtNS.AnnAssign(startToken, this.previous(), name, expr, ann);
+            }
+            else if (this.check(TokenType.EQUAL)) {
+                this.advance();
+                const expr = this.test();
+                return new StmtNS.Assign(startToken, this.previous(), name, expr);
+            }
+            else {
+                this.current--;
+                const expr = this.test();
+                return new StmtNS.SimpleExpr(startToken, this.previous(), expr);
+            }
+        }
+        import_from() {
+            const startToken = this.previous();
+            const module = this.advance();
+            this.consume(TokenType.IMPORT, "Expected import keyword");
+            let params;
+            if (this.check(TokenType.NAME)) {
+                params = [this.advance()];
+            }
+            else {
+                params = this.parameters();
+            }
+            return new StmtNS.FromImport(startToken, this.previous(), module, params);
+        }
+        parameters() {
+            this.consume(TokenType.LPAR, "Expected opening parentheses");
+            let res = this.varparamslist();
+            this.consume(TokenType.RPAR, "Expected closing parentheses");
+            return res;
+        }
+        test() {
+            if (this.match(TokenType.LAMBDA)) {
+                return this.lambdef();
+            }
+            else {
+                const startToken = this.peek();
+                let consequent = this.or_test();
+                if (this.match(TokenType.IF)) {
+                    const predicate = this.or_test();
+                    this.consume(TokenType.ELSE, "Expected else");
+                    const alternative = this.test();
+                    return new ExprNS.Ternary(startToken, this.previous(), predicate, consequent, alternative);
+                }
+                return consequent;
+            }
+        }
+        lambdef() {
+            const startToken = this.previous();
+            let args = this.varparamslist();
+            if (this.match(TokenType.COLON)) {
+                let test = this.test();
+                return new ExprNS.Lambda(startToken, this.previous(), args, test);
+            }
+            else if (this.match(TokenType.DOUBLECOLON)) {
+                let block = this.suite();
+                return new ExprNS.MultiLambda(startToken, this.previous(), args, block, []);
+            }
+            this.consume(TokenType.COLON, "Expected ':' after lambda");
+            throw new Error("unreachable code path");
+        }
+        suite() {
+            let stmts = [];
+            if (this.match(TokenType.NEWLINE)) {
+                this.consume(TokenType.INDENT, "Expected indent");
+                while (!this.match(TokenType.DEDENT)) {
+                    stmts.push(this.stmt());
+                }
+            }
+            return stmts;
+        }
+        varparamslist() {
+            let params = [];
+            while (!this.check(TokenType.COLON) && !this.check(TokenType.RPAR)) {
+                let name = this.consume(TokenType.NAME, "Expected a proper identifier in parameter");
+                params.push(name);
+                if (!this.match(TokenType.COMMA)) {
+                    break;
+                }
+            }
+            return params;
+        }
+        or_test() {
+            const startToken = this.peek();
+            let expr = this.and_test();
+            while (this.match(TokenType.OR)) {
+                const operator = this.previous();
+                const right = this.and_test();
+                expr = new ExprNS.BoolOp(startToken, this.previous(), expr, operator, right);
+            }
+            return expr;
+        }
+        and_test() {
+            const startToken = this.peek();
+            let expr = this.not_test();
+            while (this.match(TokenType.AND)) {
+                const operator = this.previous();
+                const right = this.not_test();
+                expr = new ExprNS.BoolOp(startToken, this.previous(), expr, operator, right);
+            }
+            return expr;
+        }
+        not_test() {
+            const startToken = this.peek();
+            if (this.match(TokenType.NOT, TokenType.BANG)) {
+                const operator = this.previous();
+                return new ExprNS.Unary(startToken, this.previous(), operator, this.not_test());
+            }
+            return this.comparison();
+        }
+        comparison() {
+            const startToken = this.peek();
+            let expr = this.arith_expr();
+            // @TODO: Add the rest of the comparisons
+            while (this.match(TokenType.LESS, TokenType.GREATER, TokenType.DOUBLEEQUAL, TokenType.GREATEREQUAL, TokenType.LESSEQUAL, TokenType.NOTEQUAL, TokenType.IS, TokenType.ISNOT, TokenType.IN, TokenType.NOTIN)) {
+                const operator = this.previous();
+                const right = this.arith_expr();
+                expr = new ExprNS.Compare(startToken, this.previous(), expr, operator, right);
+            }
+            return expr;
+        }
+        arith_expr() {
+            const startToken = this.peek();
+            let expr = this.term();
+            while (this.match(TokenType.PLUS, TokenType.MINUS)) {
+                const token = this.previous();
+                const right = this.term();
+                expr = new ExprNS.Binary(startToken, this.previous(), expr, token, right);
+            }
+            return expr;
+        }
+        term() {
+            const startToken = this.peek();
+            let expr = this.factor();
+            while (this.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT, TokenType.DOUBLESLASH)) {
+                const token = this.previous();
+                const right = this.factor();
+                expr = new ExprNS.Binary(startToken, this.previous(), expr, token, right);
+            }
+            return expr;
+        }
+        factor() {
+            const startToken = this.peek();
+            if (this.match(TokenType.PLUS, TokenType.MINUS)) {
+                const op = this.previous();
+                const factor = this.factor();
+                const endToken = this.previous();
+                return new ExprNS.Unary(startToken, endToken, op, factor);
+            }
+            return this.power();
+        }
+        power() {
+            const startToken = this.peek();
+            let expr = this.atom_expr();
+            if (this.match(TokenType.DOUBLESTAR)) {
+                const token = this.previous();
+                const right = this.factor();
+                const endToken = this.previous();
+                return new ExprNS.Binary(startToken, endToken, expr, token, right);
+            }
+            return expr;
+        }
+        atom_expr() {
+            let startToken = this.peek();
+            let ato = this.atom();
+            let res;
+            if (this.match(TokenType.LPAR)) {
+                let args = this.arglist();
+                const endToken = this.previous();
+                res = new ExprNS.Call(startToken, endToken, ato, args);
+            }
+            else {
+                return ato;
+            }
+            // To handle things like x()()()
+            startToken = this.peek();
+            while (this.match(TokenType.LPAR)) {
+                let args = this.arglist();
+                res = new ExprNS.Call(startToken, this.previous(), res, args);
+                startToken = this.peek();
+            }
+            return res;
+        }
+        arglist() {
+            let args = [];
+            while (!this.check(TokenType.RPAR)) {
+                let arg = this.test();
+                args.push(arg);
+                if (!this.match(TokenType.COMMA)) {
+                    break;
+                }
+            }
+            this.consume(TokenType.RPAR, "Expected closing ')' after function application");
+            return args;
+        }
+        atom() {
+            const startToken = this.peek();
+            if (this.match(TokenType.TRUE))
+                return new ExprNS.Literal(startToken, this.previous(), true);
+            if (this.match(TokenType.FALSE))
+                return new ExprNS.Literal(startToken, this.previous(), false);
+            if (this.match(TokenType.NONE))
+                return new ExprNS.None(startToken, this.previous());
+            if (this.match(TokenType.STRING)) {
+                return new ExprNS.Literal(startToken, this.previous(), this.previous().lexeme);
+            }
+            if (this.match(TokenType.NUMBER)) {
+                return new ExprNS.Literal(startToken, this.previous(), Number(this.previous().lexeme.replace(/_/g, "")));
+            }
+            if (this.match(TokenType.BIGINT)) {
+                return new ExprNS.BigIntLiteral(startToken, this.previous(), this.previous().lexeme);
+            }
+            if (this.match(TokenType.COMPLEX)) {
+                return new ExprNS.Complex(startToken, this.previous(), this.previous().lexeme);
+            }
+            if (this.match(TokenType.NAME, ...PSEUD_NAMES)) {
+                return new ExprNS.Variable(startToken, this.previous(), this.previous());
+            }
+            if (this.match(TokenType.LPAR)) {
+                let expr = this.test();
+                this.consume(TokenType.RPAR, "Expected closing ')'");
+                return new ExprNS.Grouping(startToken, this.previous(), expr);
+            }
+            const startTokenInvalid = this.peek();
+            this.synchronize();
+            const endTokenInvalid = this.peek();
+            throw new exports.ParserErrors.GenericUnexpectedSyntaxError(startToken.line, startToken.col, this.source, startTokenInvalid.indexInSource, endTokenInvalid.indexInSource);
+        }
+        //// INVALID RULES
+        parse_invalid(startToken, endToken) {
+            // @TODO invalid rules
+        }
     }
 
-    /**
-     * This interpreter implements an explicit-control evaluator.
-     *
-     * Heavily adapted from https://github.com/source-academy/JSpike/
-     */
-    let cseFinalPrint = "";
-    function addPrint(str) {
-        cseFinalPrint = cseFinalPrint + str + "\n";
-    }
-    /**
-     * Function that returns the appropriate Promise<Result> given the output of CSE machine evaluating, depending
-     * on whether the program is finished evaluating, ran into a breakpoint or ran into an error.
-     * @param context The context of the program.
-     * @param value The value of CSE machine evaluating the program.
-     * @returns The corresponding promise.
-     */
-    function CSEResultPromise(context, value) {
-        return new Promise((resolve, reject) => {
-            if (value instanceof CSEBreak) {
-                resolve({ status: 'suspended-cse-eval', context });
-            }
-            else if (value instanceof CseError) {
-                resolve({ status: 'error' });
-            }
-            else {
-                // const rep = { type: "string", value: cseFinalPrint };
-                const representation = new Representation(cseFinalPrint);
-                resolve({ status: 'finished', context, value, representation });
-            }
-        });
-    }
-    /**
-     * Function to be called when a program is to be interpreted using
-     * the explicit control evaluator.
-     *
-     * @param program The program to evaluate.
-     * @param context The context to evaluate the program in.
-     * @param options Evaluation options.
-     * @returns The result of running the CSE machine.
-     */
-    function evaluate(program, context, options = {}) {
-        // TODO: should call transformer like in js-slang
-        // seq.transform(program)
-        try {
-            context.runtime.isRunning = true;
-            context.control = new Control(program);
-            context.stash = new Stash();
-            return runCSEMachine$1(context, context.control, context.stash, options.envSteps, options.stepLimit, options.isPrelude);
+    /*
+    * Translate our AST to estree AST (Source's AST)
+    * */
+    class Translator {
+        constructor(source) {
+            this.source = source;
         }
-        catch (error) {
-            context.errors.push(new CseError(error.message));
-            return { type: 'error', message: error.message };
+        tokenToEstreeLocation(token) {
+            // Convert zero-based to one-based.
+            const line = token.line + 1;
+            const start = {
+                line,
+                column: token.col - token.lexeme.length
+            };
+            const end = {
+                line,
+                column: token.col
+            };
+            const source = token.lexeme;
+            return { source, start, end };
         }
-        finally {
-            context.runtime.isRunning = false;
+        toEstreeLocation(stmt) {
+            const start = {
+                // Convert zero-based to one-based.
+                line: stmt.startToken.line + 1,
+                column: stmt.startToken.col - stmt.startToken.lexeme.length
+            };
+            const end = {
+                // Convert zero-based to one-based.
+                line: stmt.endToken.line + 1,
+                column: stmt.endToken.col
+            };
+            const source = this.source.slice(stmt.startToken.indexInSource, stmt.endToken.indexInSource + stmt.endToken.lexeme.length);
+            return { source, start, end };
         }
-    }
-    function evaluateImports(program, context) {
-        try {
-            const [importNodeMap] = filterImportDeclarations(program);
-            const environment = currentEnvironment(context);
-            for (const [moduleName, nodes] of importNodeMap) {
-                const functions = context.nativeStorage.loadedModules[moduleName];
-                for (const node of nodes) {
-                    for (const spec of node.specifiers) {
-                        declareIdentifier(context, spec.local.name, node, environment);
-                        let obj;
-                        switch (spec.type) {
-                            case 'ImportSpecifier': {
-                                if (spec.imported.type === 'Identifier') {
-                                    obj = functions[spec.imported.name];
-                                }
-                                else {
-                                    throw new Error(`Unexpected literal import: ${spec.imported.value}`);
-                                }
-                                //obj = functions[(spec.imported).name]
-                                break;
-                            }
-                            case 'ImportDefaultSpecifier': {
-                                obj = functions.default;
-                                break;
-                            }
-                            case 'ImportNamespaceSpecifier': {
-                                obj = functions;
-                                break;
-                            }
-                        }
-                        defineVariable(context, spec.local.name, obj, true, node);
-                    }
-                }
-            }
+        resolve(stmt) {
+            return stmt.accept(this);
         }
-        catch (error) {
-            handleRuntimeError(context, error);
+        // Ugly, but just to support proper typing
+        resolveStmt(stmt) {
+            return stmt.accept(this);
         }
-    }
-    /**
-     * The primary runner/loop of the explicit control evaluator.
-     *
-     * @param context The context to evaluate the program in.
-     * @param control Points to the current Control stack.
-     * @param stash Points to the current Stash.
-     * @param envSteps Number of environment steps to run.
-     * @param stepLimit Maximum number of steps to execute.
-     * @param isPrelude Whether the program is the prelude.
-     * @returns The top value of the stash after execution.
-     */
-    function runCSEMachine$1(context, control, stash, envSteps, stepLimit, isPrelude = false) {
-        const eceState = generateCSEMachineStateStream(context, control, stash, envSteps, stepLimit, isPrelude);
-        // Execute the generator until it completes
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        for (const value of eceState) {
+        resolveManyStmt(stmts) {
+            const res = [];
+            for (const stmt of stmts) {
+                res.push(this.resolveStmt(stmt));
+            }
+            return res;
         }
-        // Return the value at the top of the storage as the result
-        const result = stash.peek();
-        return result !== undefined ? result : { type: 'undefined' };
-    }
-    /**
-     * Generator function that yields the state of the CSE Machine at each step.
-     *
-     * @param context The context of the program.
-     * @param control The control stack.
-     * @param stash The stash storage.
-     * @param envSteps Number of environment steps to run.
-     * @param stepLimit Maximum number of steps to execute.
-     * @param isPrelude Whether the program is the prelude.
-     * @yields The current state of the stash, control stack, and step count.
-     */
-    function* generateCSEMachineStateStream(context, control, stash, envSteps, stepLimit, isPrelude = false) {
-        // steps: number of steps completed
-        let steps = 0;
-        let command = control.peek();
-        // Push first node to be evaluated into context.
-        // The typeguard is there to guarantee that we are pushing a node (which should always be the case)
-        if (command && isNode$1(command)) {
-            context.runtime.nodes.unshift(command);
+        resolveExpr(expr) {
+            return expr.accept(this);
         }
-        while (command) {
-            // For local debug only
-            // console.info('next command to be evaluated');
-            // console.info(command);
-            // Return to capture a snapshot of the control and stash after the target step count is reached
-            if (!isPrelude && steps === envSteps) {
-                yield { stash, control, steps };
-                return;
+        resolveManyExpr(exprs) {
+            const res = [];
+            for (const expr of exprs) {
+                res.push(this.resolveExpr(expr));
             }
-            // Step limit reached, stop further evaluation
-            if (!isPrelude && steps === stepLimit) {
-                break;
-            }
-            if (!isPrelude && envChanging(command)) {
-                // command is evaluated on the next step
-                // Hence, next step will change the environment
-                context.runtime.changepointSteps.push(steps + 1);
-            }
-            control.pop();
-            if (isNode$1(command)) {
-                context.runtime.nodes.shift();
-                context.runtime.nodes.unshift(command);
-                //checkEditorBreakpoints(context, command)
-                cmdEvaluators[command.type](command, context, control, stash, isPrelude);
-                if (context.runtime.break && context.runtime.debuggerOn) ;
-            }
-            else {
-                // Command is an instruction
-                cmdEvaluators[command.instrType](command, context, control, stash, isPrelude);
-            }
-            // Push undefined into the stack if both control and stash is empty
-            if (control.isEmpty() && stash.isEmpty()) ;
-            command = control.peek();
-            steps += 1;
-            if (!isPrelude) {
-                context.runtime.envStepsTotal = steps;
-            }
-            // printEnvironmentVariables(context.runtime.environments);
-            yield { stash, control, steps };
+            return res;
         }
-    }
-    const cmdEvaluators = {
-        /**
-         * AST Nodes
-         */
-        Program: function (command, context, control, stash, isPrelude) {
-            // Clean up non-global, non-program, and non-preparation environments
-            while (currentEnvironment(context).name !== 'global' &&
-                currentEnvironment(context).name !== 'programEnvironment' &&
-                currentEnvironment(context).name !== 'prelude') {
-                popEnvironment(context);
-            }
-            if (hasDeclarations(command) || hasImportDeclarations(command)) {
-                if (currentEnvironment(context).name != 'programEnvironment') {
-                    const programEnv = createProgramEnvironment(context, isPrelude);
-                    pushEnvironment(context, programEnv);
-                }
-                const environment = currentEnvironment(context);
-                evaluateImports(command, context);
-                declareFunctionsAndVariables(context, command, environment);
-            }
-            if (command.body.length === 1) {
-                // If the program contains only a single statement, execute it immediately
-                const next = command.body[0];
-                cmdEvaluators[next.type](next, context, control, stash, isPrelude);
-            }
-            else {
-                // Push the block body as a sequence of statements onto the control stack
-                const seq = statementSequence(command.body, command.loc);
-                control.push(seq);
-            }
-        },
-        BlockStatement: function (command, context, control) {
-            const next = control.peek();
-            // for some of the block statements, such as if, for,
-            // no need to create a new environment
-            if (!command.skipEnv) {
-                // If environment instructions need to be pushed
-                if (next &&
-                    !(isInstr(next) && next.instrType === InstrType.ENVIRONMENT) &&
-                    !control.canAvoidEnvInstr()) {
-                    control.push(envInstr(currentEnvironment(context), command));
-                }
-                // create new block environment (for function)
-                const environment = createBlockEnvironment(context, 'blockEnvironment');
-                declareFunctionsAndVariables(context, command, environment);
-                pushEnvironment(context, environment);
-            }
-            // Push the block body onto the control stack as a sequence of statements
-            const seq = statementSequence(command.body, command.loc);
-            control.push(seq);
-        },
-        StatementSequence: function (command, context, control, stash, isPrelude) {
-            if (command.body.length === 1) {
-                // If the program contains only a single statement, execute it immediately
-                const next = command.body[0];
-                cmdEvaluators[next.type](next, context, control, stash, isPrelude);
-            }
-            else {
-                // Split and push individual nodes
-                control.push(...handleSequence(command.body));
-            }
-        },
-        // WhileStatement: function (
-        //   command: es.WhileStatement,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   if (hasBreakStatement(command.body as es.BlockStatement)) {
-        //     control.push(instr.breakMarkerInstr(command));
-        //   }
-        //   control.push(instr.whileInstr(command.test, command.body, command));
-        //   control.push(command.test);
-        //   control.push(ast.identifier('undefined', command.loc)); // 如果没有循环执行，返回 undefined
-        // },
-        // ForStatement: function (
-        //   command: es.ForStatement,
-        //   context: Context,
-        //   control: Control
-        // ) {
-        //   const init = command.init!;
-        //   const test = command.test!;
-        //   const update = command.update!;
-        //   if (init.type === 'VariableDeclaration' && init.kind === 'let') {
-        //     const id = init.declarations[0].id as es.Identifier;
-        //     const valueExpression = init.declarations[0].init!;
-        //     control.push(
-        //       ast.blockStatement(
-        //         [
-        //           init,
-        //           ast.forStatement(
-        //             ast.assignmentExpression(id, valueExpression, command.loc),
-        //             test,
-        //             update,
-        //             ast.blockStatement(
-        //               [
-        //                 ast.variableDeclaration(
-        //                   [
-        //                     ast.variableDeclarator(
-        //                       ast.identifier(`_copy_of_${id.name}`, command.loc),
-        //                       ast.identifier(id.name, command.loc),
-        //                       command.loc
-        //                     )
-        //                   ],
-        //                   command.loc
-        //                 ),
-        //                 ast.blockStatement(
-        //                   [
-        //                     ast.variableDeclaration(
-        //                       [
-        //                         ast.variableDeclarator(
-        //                           ast.identifier(id.name, command.loc),
-        //                           ast.identifier(`_copy_of_${id.name}`, command.loc),
-        //                           command.loc
-        //                         )
-        //                       ],
-        //                       command.loc
-        //                     ),
-        //                     command.body
-        //                   ],
-        //                   command.loc
-        //                 )
-        //               ],
-        //               command.loc
-        //             ),
-        //             command.loc
-        //           )
-        //         ],
-        //         command.loc
-        //       )
-        //     );
-        //   } else {
-        //     if (hasBreakStatement(command.body as es.BlockStatement)) {
-        //       control.push(instr.breakMarkerInstr(command));
+        // Converts our internal identifier to estree identifier.
+        rawStringToIdentifier(name, stmtOrExpr) {
+            const keywords = new Set(['abstract', 'arguments', 'await', 'boolean', 'byte',
+                'case', 'catch', 'char', 'const', 'debugger', 'default', 'delete', 'do', 'double', 'enum',
+                'eval', 'export', 'extends', 'false', 'final', 'float', 'function', 'goto', 'implements',
+                'instanceof', 'int', 'interface', 'let', 'long', 'native', 'new', 'null', 'package',
+                'private', 'protected', 'public', 'short', 'static', 'super', 'switch', 'synchronized', 'this',
+                'throw', 'throws', 'transient', 'true', 'typeof', 'var', 'void', 'volatile']);
+            return {
+                type: 'Identifier',
+                name: keywords.has(name) ? '$' + name : name,
+                loc: this.toEstreeLocation(stmtOrExpr),
+            };
+        }
+        // Token to estree identifier.
+        convertToIdentifier(name) {
+            const keywords = new Set(['abstract', 'arguments', 'await', 'boolean', 'byte',
+                'case', 'catch', 'char', 'const', 'debugger', 'default', 'delete', 'do', 'double', 'enum',
+                'eval', 'export', 'extends', 'false', 'final', 'float', 'function', 'goto', 'implements',
+                'instanceof', 'int', 'interface', 'let', 'long', 'native', 'new', 'null', 'package',
+                'private', 'protected', 'public', 'short', 'static', 'super', 'switch', 'synchronized', 'this',
+                'throw', 'throws', 'transient', 'true', 'typeof', 'var', 'void', 'volatile']);
+            return {
+                type: 'Identifier',
+                name: keywords.has(name.lexeme) ? '$' + name.lexeme : name.lexeme,
+                loc: this.tokenToEstreeLocation(name),
+            };
+        }
+        convertToIdentifiers(names) {
+            return names.map(name => this.convertToIdentifier(name));
+        }
+        // private convertToExpressionStatement(expr: Expression): ExpressionStatement {
+        //     return {
+        //         type: 'ExpressionStatement',
+        //         expression: expr,
+        //         // loc: this.toEstreeLocation(),
         //     }
-        //     control.push(instr.forInstr(init, test, update, command.body, command));
-        //     control.push(test);
-        //     control.push(instr.popInstr(command)); // Pop value from init assignment
-        //     control.push(init);
-        //     control.push(ast.identifier('undefined', command.loc)); // Return undefined if there is no loop execution
-        //   }
-        // },
-        IfStatement: function (command, //es.IfStatement,
-        context, control, stash) {
-            control.push(...reduceConditional(command));
-        },
-        ExpressionStatement: function (command, //es.ExpressionStatement,
-        context, control, stash, isPrelude) {
-            cmdEvaluators[command.expression.type](command.expression, context, control, stash, isPrelude);
-        },
-        // DebuggerStatement: function (
-        //   command: es.DebuggerStatement,
-        //   context: Context
-        // ) {
-        //   context.runtime.break = true;
-        // },
-        VariableDeclaration: function (command, context, control) {
-            const declaration = command.declarations[0];
-            const id = declaration.id;
-            const init = declaration.init;
-            control.push(popInstr(command));
-            control.push(assmtInstr(id.name, command.kind === 'const', true, command));
-            control.push(init);
-        },
-        FunctionDeclaration: function (command, //es.FunctionDeclaration,
-        context, control) {
-            const lambdaExpression = blockArrowFunction(command.params, command.body, command.loc);
-            const lambdaDeclaration = constantDeclaration(command.id.name, lambdaExpression, command.loc);
-            control.push(lambdaDeclaration);
-        },
-        ReturnStatement: function (command, //as es.ReturnStatement,
-        context, control) {
-            const next = control.peek();
-            if (next && isInstr(next) && next.instrType === InstrType.MARKER) {
-                control.pop();
-            }
-            else {
-                control.push(resetInstr(command));
-            }
-            if (command.argument) {
-                control.push(command.argument);
-            }
-        },
-        // ContinueStatement: function (
-        //   command: es.ContinueStatement,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   control.push(instr.contInstr(command));
-        // },
-        // BreakStatement: function (
-        //   command: es.BreakStatement,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   control.push(instr.breakInstr(command));
-        // },
-        ImportDeclaration: function () { },
-        /**
-         * Expressions
-         */
-        Literal: function (command, //es.Literal
-        context, control, stash) {
-            const literalValue = command.value;
-            const bigintValue = command.bigint;
-            const complexValue = command.complex;
-            if (literalValue !== undefined) {
-                let value;
-                if (typeof literalValue === 'number') {
-                    value = { type: 'number', value: literalValue };
-                }
-                else if (typeof literalValue === 'string') {
-                    value = { type: 'string', value: literalValue };
-                }
-                else if (typeof literalValue === 'boolean') {
-                    value = { type: 'bool', value: literalValue };
-                    //value = literalValue;
-                }
-                else {
-                    //handleRuntimeError(context, new CseError('Unsupported literal type'));
-                    return;
-                }
-                stash.push(value);
-            }
-            else if (bigintValue !== undefined) {
-                let fixedBigintValue = bigintValue.toString().replace(/_/g, "");
-                let value;
-                try {
-                    value = { type: 'bigint', value: BigInt(fixedBigintValue) };
-                }
-                catch (e) {
-                    //handleRuntimeError(context, new CseError('Invalid BigInt literal'));
-                    return;
-                }
-                stash.push(value);
-            }
-            else if (complexValue !== undefined) {
-                let value;
-                let pyComplexNumber = new PyComplexNumber(complexValue.real, complexValue.imag);
-                try {
-                    value = { type: 'complex', value: pyComplexNumber };
-                }
-                catch (e) {
-                    //handleRuntimeError(context, new CseError('Invalid BigInt literal'));
-                    return;
-                }
-                stash.push(value);
-            }
-            else ;
-        },
-        NoneType: function (command, //es.Literal
-        context, control, stash) {
-            stash.push({ type: 'NoneType', value: undefined });
-        },
-        // AssignmentExpression: function (
-        //   command: es.AssignmentExpression,
-        //   context: Context,
-        //   control: Control
-        // ) {
-        //   if (command.left.type === 'MemberExpression') {
-        //     control.push(instr.arrAssmtInstr(command));
-        //     control.push(command.right);
-        //     control.push(command.left.property);
-        //     control.push(command.left.object);
-        //   } else if (command.left.type === 'Identifier') {
-        //     const id = command.left;
-        //     control.push(instr.assmtInstr(id.name, false, false, command));
-        //     control.push(command.right);
-        //   }
-        // },
-        // ArrayExpression: function (
-        //   command: es.ArrayExpression,
-        //   context: Context,
-        //   control: Control
-        // ) {
-        //   const elems = command.elements as es.Expression[];
-        //   reverse(elems);
-        //   const len = elems.length;
-        //   control.push(instr.arrLitInstr(len, command));
-        //   for (const elem of elems) {
-        //     control.push(elem);
-        //   }
-        // },
-        // MemberExpression: function (
-        //   command: es.MemberExpression,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   control.push(instr.arrAccInstr(command));
-        //   control.push(command.property);
-        //   control.push(command.object);
-        // },
-        ConditionalExpression: function (command, //es.ConditionalExpression,
-        context, control, stash) {
-            control.push(...reduceConditional(command));
-        },
-        Identifier: function (command, //es.Identifier,
-        context, control, stash) {
-            if (builtInConstants.has(command.name)) {
-                const builtinCons = builtInConstants.get(command.name);
-                try {
-                    stash.push(builtinCons);
-                    return;
-                }
-                catch (error) {
-                    // Error
-                    if (error instanceof Error) {
-                        throw new Error(error.message);
-                    }
-                    else {
-                        throw new Error();
-                    }
-                    // if (error instanceof RuntimeSourceError) {
-                    //   throw error;
-                    // } else {
-                    //   throw new RuntimeSourceError(`Error in builtin function ${funcName}: ${error}`);
-                    // }
-                }
-            }
-            else {
-                stash.push(getVariable(context, command.name));
-            }
-        },
-        UnaryExpression: function (command, //es.UnaryExpression,
-        context, control) {
-            control.push(unOpInstr(command.operator, command));
-            control.push(command.argument);
-        },
-        BinaryExpression: function (command, //es.BinaryExpression,
-        context, control) {
-            // currently for if statement
-            control.push(binOpInstr(command.operator, command));
-            control.push(command.right);
-            control.push(command.left);
-        },
-        LogicalExpression: function (command, //es.LogicalExpression,
-        context, control) {
-            if (command.operator === '&&') {
-                control.push(conditionalExpression(command.left, command.right, literal(false), command.loc));
-            }
-            else {
-                control.push(conditionalExpression(command.left, literal(true), command.right, command.loc));
-            }
-        },
-        ArrowFunctionExpression: function (command, //es.ArrowFunctionExpression,
-        context, control, stash, isPrelude) {
-            const closure = Closure.makeFromArrowFunction(command, currentEnvironment(context), context, true, isPrelude);
-            stash.push(closure);
-        },
-        CallExpression: function (command, //es.CallExpression,
-        context, control) {
-            // add
-            if (isIdentifier(command.callee)) {
-                let name = command.callee.name;
-                if (name === '__py_adder' || name === '__py_minuser' ||
-                    name === '__py_multiplier' || name === '__py_divider' ||
-                    name === '__py_modder' || name === '__py_floorer' ||
-                    name === '__py_powerer') {
-                    control.push(binOpInstr(command.callee, command));
-                    control.push(command.arguments[1]);
-                    control.push(command.arguments[0]);
-                    return;
-                }
-            }
-            control.push(appInstr(command.arguments.length, command));
-            for (let index = command.arguments.length - 1; index >= 0; index--) {
-                control.push(command.arguments[index]);
-            }
-            control.push(command.callee);
-        },
-        // /**
-        //  * Instructions
-        //  */
-        [InstrType.RESET]: function (command, //Instr,
-        context, control, stash) {
-            const cmdNext = control.pop();
-            if (cmdNext && (isNode$1(cmdNext) || cmdNext.instrType !== InstrType.MARKER)) {
-                control.push(resetInstr(command.srcNode));
-            }
-        },
-        // [InstrType.WHILE]: function (
-        //   command: WhileInstr,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   const test = stash.pop();
-        //   const error = rttc.checkIfStatement(command.srcNode, test, context.chapter);
-        //   if (error) {
-        //     handleRuntimeError(context, error);
-        //   }
-        //   if (test) {
-        //     control.push(command);
-        //     control.push(command.test);
-        //     if (hasContinueStatement(command.body as es.BlockStatement)) {
-        //       control.push(instr.contMarkerInstr(command.srcNode));
-        //     }
-        //     if (!valueProducing(command.body)) {
-        //       control.push(ast.identifier('undefined', command.body.loc));
-        //     }
-        //     control.push(command.body);
-        //     control.push(instr.popInstr(command.srcNode)); // Pop previous body value
-        //   }
-        // },
-        // [InstrType.FOR]: function (
-        //   command: ForInstr,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   const test = stash.pop();
-        //   const error = rttc.checkIfStatement(command.srcNode, test, context.chapter);
-        //   if (error) {
-        //     handleRuntimeError(context, error);
-        //   }
-        //   if (test) {
-        //     control.push(command);
-        //     control.push(command.test);
-        //     control.push(instr.popInstr(command.srcNode)); // Pop value from update
-        //     control.push(command.update);
-        //     if (hasContinueStatement(command.body as es.BlockStatement)) {
-        //       control.push(instr.contMarkerInstr(command.srcNode));
-        //     }
-        //     if (!valueProducing(command.body)) {
-        //       control.push(ast.identifier('undefined', command.body.loc));
-        //     }
-        //     control.push(command.body);
-        //     control.push(instr.popInstr(command.srcNode)); // Pop previous body value
-        //   }
-        // },
-        [InstrType.ASSIGNMENT]: function (command, //AssmtInstr,
-        context, control, stash) {
-            if (command.declaration) {
-                //if ()
-                defineVariable(context, command.symbol, stash.peek(), command.constant, command.srcNode);
-            }
-        },
-        [InstrType.UNARY_OP]: function (command, //UnOpInstr,
-        context, control, stash) {
-            const argument = stash.pop();
-            // const error = rttc.checkUnaryExpression(
-            //   command.srcNode,
-            //   command.symbol as es.UnaryOperator,
-            //   argument,
-            //   context.chapter
-            // );
-            // if (error) {
-            //   handleRuntimeError(context, error);
-            // }
-            stash.push(evaluateUnaryExpression(command.symbol, argument));
-        },
-        [InstrType.BINARY_OP]: function (command, //BinOpInstr,
-        context, control, stash) {
-            const right = stash.pop();
-            const left = stash.pop();
-            // const error = rttc.checkBinaryExpression(
-            //   command.srcNode,
-            //   command.symbol as es.BinaryOperator,
-            //   context.chapter,
-            //   left,
-            //   right
-            // );
-            // if (error) {
-            //   handleRuntimeError(context, error);
-            // }
-            if ((left.type === 'string' && right.type !== 'string') ||
-                (left.type !== 'string' && right.type === 'string')) {
-                handleRuntimeError(context, new TypeConcatenateError(command));
-            }
-            stash.push(evaluateBinaryExpression(context, command.symbol, left, right));
-        },
-        [InstrType.POP]: function (command, //Instr,
-        context, control, stash) {
-            stash.pop();
-        },
-        [InstrType.APPLICATION]: function (command, //AppInstr,
-        context, control, stash) {
-            var _a;
-            const args = [];
-            for (let index = 0; index < command.numOfArgs; index++) {
-                args.unshift(stash.pop());
-            }
-            const func = stash.pop();
-            // continuation in python?
-            // func instanceof Closure
-            if (func instanceof Closure) {
-                // Check for number of arguments mismatch error
-                checkNumberOfArguments(command, context, func, args, command.srcNode);
-                const next = control.peek();
-                // Push ENVIRONMENT instruction if needed - if next control stack item
-                // exists and is not an environment instruction, OR the control only contains
-                // environment indepedent items
-                if (next &&
-                    !(isInstr(next) && next.instrType === InstrType.ENVIRONMENT) &&
-                    !control.canAvoidEnvInstr()) {
-                    control.push(envInstr(currentEnvironment(context), command.srcNode));
-                }
-                // Create environment for function parameters if the function isn't nullary.
-                // Name the environment if the function call expression is not anonymous
-                if (args.length > 0) {
-                    const environment = createEnvironment(context, func, args, command.srcNode);
-                    pushEnvironment(context, environment);
-                }
-                else {
-                    context.runtime.environments.unshift(func.environment);
-                }
-                // Handle special case if function is simple
-                if (isSimpleFunction(func.node)) {
-                    // Closures convert ArrowExpressionStatements to BlockStatements
-                    const block = func.node.body;
-                    const returnStatement = block.body[0];
-                    control.push((_a = returnStatement.argument) !== null && _a !== void 0 ? _a : identifier('undefined', returnStatement.loc));
-                }
-                else {
-                    if (control.peek()) {
-                        // push marker if control not empty
-                        control.push(markerInstr(command.srcNode));
-                    }
-                    control.push(func.node.body);
-                    // console.info((func as Closure).node.body);
-                }
-                return;
-            }
-            // Value is a built-in function
-            let function_name = command.srcNode.callee.name;
-            if (builtIns.has(function_name)) {
-                const builtinFunc = builtIns.get(function_name);
-                try {
-                    stash.push(builtinFunc(args));
-                    return;
-                }
-                catch (error) {
-                    // Error
-                    if (error instanceof Error) {
-                        throw new Error(error.message);
-                    }
-                    else {
-                        throw new Error();
-                    }
-                    // if (error instanceof RuntimeSourceError) {
-                    //   throw error;
-                    // } else {
-                    //   throw new RuntimeSourceError(`Error in builtin function ${funcName}: ${error}`);
-                    // }
-                }
-            }
-        },
-        [InstrType.BRANCH]: function (command, //BranchInstr,
-        context, control, stash) {
-            const test = stash.pop();
-            // const error = rttc.checkIfStatement(command.srcNode, test, context.chapter);
-            // if (error) {
-            //   handleRuntimeError(context, error);
-            // }
-            if (test.value) {
-                if (!valueProducing(command.consequent)) {
-                    control.push(identifier('undefined', command.consequent.loc));
-                }
-                command.consequent.skipEnv = true;
-                control.push(command.consequent);
-            }
-            else if (command.alternate) {
-                if (!valueProducing(command.alternate)) {
-                    control.push(identifier('undefined', command.alternate.loc));
-                }
-                command.alternate.skipEnv = true;
-                control.push(command.alternate);
-            }
-            else {
-                control.push(identifier('undefined', command.srcNode.loc));
-            }
-        },
-        [InstrType.ENVIRONMENT]: function (command, //EnvInstr,
-        context) {
-            while (currentEnvironment(context).id !== command.env.id) {
-                popEnvironment(context);
-            }
-        },
-        // [InstrType.ARRAY_LITERAL]: function (
-        //   command: ArrLitInstr,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   const arity = command.arity;
-        //   const array: any[] = [];
-        //   for (let i = 0; i < arity; ++i) {
-        //     array.unshift(stash.pop());
-        //   }
-        //   handleArrayCreation(context, array);
-        //   stash.push(array);
-        // },
-        // [InstrType.ARRAY_ACCESS]: function (
-        //   command: Instr,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   const index = stash.pop();
-        //   const array = stash.pop();
-        //   stash.push(array[index]);
-        // },
-        // [InstrType.ARRAY_ASSIGNMENT]: function (
-        //   command: Instr,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   const value = stash.pop();
-        //   const index = stash.pop();
-        //   const array = stash.pop();
-        //   array[index] = value;
-        //   stash.push(value);
-        // },
-        // [InstrType.CONTINUE]: function (
-        //   command: Instr,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   const next = control.pop() as ControlItem;
-        //   if (isInstr(next) && next.instrType === InstrType.CONTINUE_MARKER) {
-        //   } else if (isInstr(next) && next.instrType === InstrType.ENVIRONMENT) {
-        //     control.push(command);
-        //     control.push(next); 
-        //   } else {
-        //     control.push(command);
-        //   }
-        // },
-        // [InstrType.CONTINUE_MARKER]: function () {
-        // },
-        // [InstrType.BREAK]: function (
-        //   command: Instr,
-        //   context: Context,
-        //   control: Control,
-        //   stash: Stash
-        // ) {
-        //   const next = control.pop() as ControlItem;
-        //   if (isInstr(next) && next.instrType === InstrType.BREAK_MARKER) {
-        //   } else if (isInstr(next) && next.instrType === InstrType.ENVIRONMENT) {
-        //     control.push(command);
-        //     control.push(next);
-        //   } else {
-        //     control.push(command);
-        //   }
-        // },
-        // [InstrType.BREAK_MARKER]: function () {
         // }
+        // private converTokenstoDecls(varDecls: Token[]): VariableDeclaration {
+        //     return {
+        //         type: 'VariableDeclaration',
+        //         declarations: varDecls?.map((token): VariableDeclarator => {
+        //             return {
+        //                 type: 'VariableDeclarator',
+        //                 id: this.convertToIdentifier(token),
+        //                 loc: this.tokenToEstreeLocation(token),
+        //             }
+        //         }),
+        //         kind: 'var',
+        //         loc: this.toEstreeLocation(),
+        //     };
+        // }
+        // Wraps an array of statements to a block.
+        // WARNING: THIS CREATES A NEW BLOCK IN
+        // JS AST. THIS ALSO MEANS A NEW NAMESPACE. BE CAREFUL!
+        wrapInBlock(stmt, stmts) {
+            return {
+                type: 'BlockStatement',
+                body: this.resolveManyStmt(stmts),
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        //// STATEMENTS
+        visitFileInputStmt(stmt) {
+            const newBody = this.resolveManyStmt(stmt.statements);
+            // if (stmt.varDecls !== null && stmt.varDecls.length > 0) {
+            //     const decls = this.converTokenstoDecls(stmt.varDecls);
+            //     newBody.unshift(decls);
+            // }
+            return {
+                type: 'Program',
+                sourceType: 'module',
+                body: newBody,
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitIndentCreation(stmt) {
+            return {
+                type: 'EmptyStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitDedentCreation(stmt) {
+            return {
+                type: 'EmptyStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitFunctionDefStmt(stmt) {
+            const newBody = this.resolveManyStmt(stmt.body);
+            // if (stmt.varDecls !== null && stmt.varDecls.length > 0) {
+            //     const decls = this.converTokenstoDecls(stmt.varDecls);
+            //     newBody.unshift(decls);
+            // }
+            return {
+                type: 'FunctionDeclaration',
+                id: this.convertToIdentifier(stmt.name),
+                params: this.convertToIdentifiers(stmt.parameters),
+                body: {
+                    type: 'BlockStatement',
+                    body: newBody,
+                },
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitAnnAssignStmt(stmt) {
+            return {
+                type: 'AssignmentExpression',
+                // We only have one type of assignment in restricted Python.
+                operator: '=',
+                left: this.convertToIdentifier(stmt.name),
+                right: this.resolveExpr(stmt.value),
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        // Note: assignments are expressions in JS.
+        visitAssignStmt(stmt) {
+            // return this.convertToExpressionStatement({
+            //     type: 'AssignmentExpression',
+            //     // We only have one type of assignment in restricted Python.
+            //     operator: '=',
+            //     left: this.convertToIdentifier(stmt.name),
+            //     right: this.resolveExpr(stmt.value),
+            //     loc: this.toEstreeLocation(stmt),
+            // })
+            const declaration = {
+                type: 'VariableDeclarator',
+                id: this.convertToIdentifier(stmt.name),
+                loc: this.tokenToEstreeLocation(stmt.name),
+                init: this.resolveExpr(stmt.value),
+            };
+            return {
+                type: 'VariableDeclaration',
+                declarations: [declaration],
+                // Note: we abuse the fact that var is function and module scoped
+                // which is exactly the same as how Python assignments are scoped!
+                kind: 'var',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        // Convert to source's built-in assert function.
+        visitAssertStmt(stmt) {
+            return {
+                type: 'CallExpression',
+                optional: false,
+                callee: this.rawStringToIdentifier('assert', stmt),
+                arguments: [this.resolveExpr(stmt.value)],
+                // @TODO, this needs to come after callee
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        // @TODO decide how to do for loops
+        // For now, empty block
+        visitForStmt(stmt) {
+            return {
+                type: 'EmptyStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitIfStmt(stmt) {
+            return {
+                type: 'IfStatement',
+                test: this.resolveExpr(stmt.condition),
+                consequent: this.wrapInBlock(stmt, stmt.body),
+                alternate: stmt.elseBlock !== null ? this.wrapInBlock(stmt, stmt.elseBlock) : null,
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitGlobalStmt(stmt) {
+            return {
+                type: 'EmptyStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitNonLocalStmt(stmt) {
+            return {
+                type: 'EmptyStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitReturnStmt(stmt) {
+            return {
+                type: 'ReturnStatement',
+                argument: stmt.value == null ? null : this.resolveExpr(stmt.value),
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitWhileStmt(stmt) {
+            return {
+                type: 'WhileStatement',
+                test: this.resolveExpr(stmt.condition),
+                body: this.wrapInBlock(stmt, stmt.body),
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitSimpleExprStmt(stmt) {
+            return {
+                type: 'ExpressionStatement',
+                expression: this.resolveExpr(stmt.expression),
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        // @TODO
+        visitFromImportStmt(stmt) {
+            const specifiers = stmt.names.map(name => {
+                const ident = this.convertToIdentifier(name);
+                return {
+                    type: 'ImportSpecifier',
+                    imported: ident,
+                    local: ident,
+                };
+            });
+            return {
+                type: 'ImportDeclaration',
+                specifiers: specifiers,
+                source: {
+                    type: 'Literal',
+                    value: stmt.module.lexeme,
+                    loc: this.tokenToEstreeLocation(stmt.module)
+                },
+                attributes: []
+            };
+        }
+        visitContinueStmt(stmt) {
+            return {
+                type: 'ContinueStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitBreakStmt(stmt) {
+            return {
+                type: 'BreakStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        visitPassStmt(stmt) {
+            return {
+                type: 'EmptyStatement',
+                loc: this.toEstreeLocation(stmt),
+            };
+        }
+        //// EXPRESSIONS
+        visitVariableExpr(expr) {
+            return this.convertToIdentifier(expr.name);
+        }
+        visitLambdaExpr(expr) {
+            return {
+                type: 'ArrowFunctionExpression',
+                expression: true,
+                params: this.convertToIdentifiers(expr.parameters),
+                body: this.resolveExpr(expr.body),
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        // disabled for now
+        visitMultiLambdaExpr(expr) {
+            return {
+                type: 'EmptyStatement',
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitUnaryExpr(expr) {
+            const op = expr.operator.type;
+            let res = '-';
+            let plus = false;
+            switch (op) {
+                case TokenType.NOT:
+                    res = '!';
+                    break;
+                case TokenType.PLUS:
+                    res = '+';
+                    plus = true;
+                    break;
+                case TokenType.MINUS:
+                    res = '-';
+                    break;
+                default:
+                    throw new Error("Unreachable code path in translator");
+            }
+            if (plus) {
+                return {
+                    type: 'CallExpression',
+                    optional: false,
+                    callee: {
+                        type: 'Identifier',
+                        name: '__py_unary_plus',
+                        loc: this.toEstreeLocation(expr),
+                    },
+                    arguments: [this.resolveExpr(expr.right)],
+                    loc: this.toEstreeLocation(expr),
+                };
+            }
+            return {
+                type: 'UnaryExpression',
+                // To satisfy the type checker.
+                operator: res,
+                prefix: true,
+                argument: this.resolveExpr(expr.right),
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitGroupingExpr(expr) {
+            return this.resolveExpr(expr.expression);
+        }
+        visitBinaryExpr(expr) {
+            const op = expr.operator.type;
+            let res = '';
+            // To make the type checker happy.
+            switch (op) {
+                case TokenType.PLUS:
+                    res = '__py_adder';
+                    break;
+                case TokenType.MINUS:
+                    res = '__py_minuser';
+                    break;
+                case TokenType.STAR:
+                    res = '__py_multiplier';
+                    break;
+                case TokenType.SLASH:
+                    res = '__py_divider';
+                    break;
+                case TokenType.PERCENT:
+                    res = '__py_modder';
+                    break;
+                // @TODO double slash and power needs to convert to math exponent/floor divide
+                case TokenType.DOUBLESLASH:
+                    res = '__py_floorer';
+                    break;
+                case TokenType.DOUBLESTAR:
+                    res = '__py_powerer';
+                    break;
+                default:
+                    throw new Error("Unreachable binary code path in translator");
+            }
+            return {
+                type: 'CallExpression',
+                optional: false,
+                callee: {
+                    type: 'Identifier',
+                    name: res,
+                    loc: this.toEstreeLocation(expr),
+                },
+                arguments: [this.resolveExpr(expr.left), this.resolveExpr(expr.right)],
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitCompareExpr(expr) {
+            const op = expr.operator.type;
+            let res = '+';
+            // To make the type checker happy.
+            switch (op) {
+                case TokenType.LESS:
+                    res = '<';
+                    break;
+                case TokenType.GREATER:
+                    res = '>';
+                    break;
+                case TokenType.DOUBLEEQUAL:
+                    res = '===';
+                    break;
+                case TokenType.GREATEREQUAL:
+                    res = '>=';
+                    break;
+                case TokenType.LESSEQUAL:
+                    res = '<=';
+                    break;
+                case TokenType.NOTEQUAL:
+                    res = '!==';
+                    break;
+                // @TODO we need to convert these to builtin function applications.
+                case TokenType.IS:
+                case TokenType.ISNOT:
+                case TokenType.IN:
+                case TokenType.NOTIN:
+                    throw new exports.TranslatorErrors.UnsupportedOperator(expr.operator.line, expr.operator.col, this.source, expr.operator.indexInSource);
+                default:
+                    throw new Error("Unreachable binary code path in translator");
+            }
+            return {
+                type: 'BinaryExpression',
+                operator: res,
+                left: this.resolveExpr(expr.left),
+                right: this.resolveExpr(expr.right),
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitBoolOpExpr(expr) {
+            const op = expr.operator.type;
+            let res = '||';
+            // To make the type checker happy.
+            switch (op) {
+                case TokenType.AND:
+                    res = '&&';
+                    break;
+                case TokenType.OR:
+                    res = '||';
+                    break;
+                default:
+                    throw new Error("Unreachable binary code path in translator");
+            }
+            return {
+                type: 'LogicalExpression',
+                operator: res,
+                left: this.resolveExpr(expr.left),
+                right: this.resolveExpr(expr.right),
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitCallExpr(expr) {
+            return {
+                type: 'CallExpression',
+                optional: false,
+                callee: this.resolveExpr(expr.callee),
+                arguments: this.resolveManyExpr(expr.args),
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitTernaryExpr(expr) {
+            return {
+                type: 'ConditionalExpression',
+                test: this.resolveExpr(expr.predicate),
+                alternate: this.resolveExpr(expr.alternative),
+                consequent: this.resolveExpr(expr.consequent),
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitLiteralExpr(expr) {
+            return {
+                type: 'Literal',
+                value: expr.value,
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitBigIntLiteralExpr(expr) {
+            return {
+                type: 'Literal',
+                bigint: expr.value,
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+        visitNoneExpr(expr) {
+            return {
+                type: 'NoneType',
+                loc: this.toEstreeLocation(expr)
+            };
+        }
+        visitComplexExpr(expr) {
+            return {
+                // 你可以复用 "Literal"，也可以用别的 type 标记
+                // 这里保持和 BigInt 的风格一致
+                type: 'Literal',
+                // 和 visitBigIntLiteralExpr 类似，这里用一个字段来保存复数内容
+                // 比如把它叫做 "complex"
+                // expr.value 是一个 PyComplexNumber, 你可以用 toString(), 或者直接存 real/imag
+                complex: {
+                    real: expr.value.real,
+                    imag: expr.value.imag
+                },
+                // 和其它 literal 一样，加上位置信息
+                loc: this.toEstreeLocation(expr),
+            };
+        }
+    }
+
+    var levenshtein$1 = {exports: {}};
+
+    const peq = new Uint32Array(0x10000);
+    const myers_32 = (a, b) => {
+        const n = a.length;
+        const m = b.length;
+        const lst = 1 << (n - 1);
+        let pv = -1;
+        let mv = 0;
+        let sc = n;
+        let i = n;
+        while (i--) {
+            peq[a.charCodeAt(i)] |= 1 << i;
+        }
+        for (i = 0; i < m; i++) {
+            let eq = peq[b.charCodeAt(i)];
+            const xv = eq | mv;
+            eq |= ((eq & pv) + pv) ^ pv;
+            mv |= ~(eq | pv);
+            pv &= eq;
+            if (mv & lst) {
+                sc++;
+            }
+            if (pv & lst) {
+                sc--;
+            }
+            mv = (mv << 1) | 1;
+            pv = (pv << 1) | ~(xv | mv);
+            mv &= xv;
+        }
+        i = n;
+        while (i--) {
+            peq[a.charCodeAt(i)] = 0;
+        }
+        return sc;
+    };
+    const myers_x = (b, a) => {
+        const n = a.length;
+        const m = b.length;
+        const mhc = [];
+        const phc = [];
+        const hsize = Math.ceil(n / 32);
+        const vsize = Math.ceil(m / 32);
+        for (let i = 0; i < hsize; i++) {
+            phc[i] = -1;
+            mhc[i] = 0;
+        }
+        let j = 0;
+        for (; j < vsize - 1; j++) {
+            let mv = 0;
+            let pv = -1;
+            const start = j * 32;
+            const vlen = Math.min(32, m) + start;
+            for (let k = start; k < vlen; k++) {
+                peq[b.charCodeAt(k)] |= 1 << k;
+            }
+            for (let i = 0; i < n; i++) {
+                const eq = peq[a.charCodeAt(i)];
+                const pb = (phc[(i / 32) | 0] >>> i) & 1;
+                const mb = (mhc[(i / 32) | 0] >>> i) & 1;
+                const xv = eq | mv;
+                const xh = ((((eq | mb) & pv) + pv) ^ pv) | eq | mb;
+                let ph = mv | ~(xh | pv);
+                let mh = pv & xh;
+                if ((ph >>> 31) ^ pb) {
+                    phc[(i / 32) | 0] ^= 1 << i;
+                }
+                if ((mh >>> 31) ^ mb) {
+                    mhc[(i / 32) | 0] ^= 1 << i;
+                }
+                ph = (ph << 1) | pb;
+                mh = (mh << 1) | mb;
+                pv = mh | ~(xv | ph);
+                mv = ph & xv;
+            }
+            for (let k = start; k < vlen; k++) {
+                peq[b.charCodeAt(k)] = 0;
+            }
+        }
+        let mv = 0;
+        let pv = -1;
+        const start = j * 32;
+        const vlen = Math.min(32, m - start) + start;
+        for (let k = start; k < vlen; k++) {
+            peq[b.charCodeAt(k)] |= 1 << k;
+        }
+        let score = m;
+        for (let i = 0; i < n; i++) {
+            const eq = peq[a.charCodeAt(i)];
+            const pb = (phc[(i / 32) | 0] >>> i) & 1;
+            const mb = (mhc[(i / 32) | 0] >>> i) & 1;
+            const xv = eq | mv;
+            const xh = ((((eq | mb) & pv) + pv) ^ pv) | eq | mb;
+            let ph = mv | ~(xh | pv);
+            let mh = pv & xh;
+            score += (ph >>> (m - 1)) & 1;
+            score -= (mh >>> (m - 1)) & 1;
+            if ((ph >>> 31) ^ pb) {
+                phc[(i / 32) | 0] ^= 1 << i;
+            }
+            if ((mh >>> 31) ^ mb) {
+                mhc[(i / 32) | 0] ^= 1 << i;
+            }
+            ph = (ph << 1) | pb;
+            mh = (mh << 1) | mb;
+            pv = mh | ~(xv | ph);
+            mv = ph & xv;
+        }
+        for (let k = start; k < vlen; k++) {
+            peq[b.charCodeAt(k)] = 0;
+        }
+        return score;
+    };
+    const distance = (a, b) => {
+        if (a.length < b.length) {
+            const tmp = b;
+            b = a;
+            a = tmp;
+        }
+        if (b.length === 0) {
+            return a.length;
+        }
+        if (a.length <= 32) {
+            return myers_32(a, b);
+        }
+        return myers_x(a, b);
+    };
+    const closest = (str, arr) => {
+        let min_distance = Infinity;
+        let min_index = 0;
+        for (let i = 0; i < arr.length; i++) {
+            const dist = distance(str, arr[i]);
+            if (dist < min_distance) {
+                min_distance = dist;
+                min_index = i;
+            }
+        }
+        return arr[min_index];
     };
 
+    var mod = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        closest: closest,
+        distance: distance
+    });
+
+    var require$$0 = /*@__PURE__*/getAugmentedNamespace(mod);
+
+    var hasRequiredLevenshtein;
+
+    function requireLevenshtein () {
+    	if (hasRequiredLevenshtein) return levenshtein$1.exports;
+    	hasRequiredLevenshtein = 1;
+    	(function (module, exports) {
+    		(function() {
+    		  
+    		  var collator;
+    		  try {
+    		    collator = (typeof Intl !== "undefined" && typeof Intl.Collator !== "undefined") ? Intl.Collator("generic", { sensitivity: "base" }) : null;
+    		  } catch (err){
+    		    console.log("Collator could not be initialized and wouldn't be used");
+    		  }
+
+    		  var levenshtein = require$$0;
+
+    		  // arrays to re-use
+    		  var prevRow = [],
+    		    str2Char = [];
+    		  
+    		  /**
+    		   * Based on the algorithm at http://en.wikipedia.org/wiki/Levenshtein_distance.
+    		   */
+    		  var Levenshtein = {
+    		    /**
+    		     * Calculate levenshtein distance of the two strings.
+    		     *
+    		     * @param str1 String the first string.
+    		     * @param str2 String the second string.
+    		     * @param [options] Additional options.
+    		     * @param [options.useCollator] Use `Intl.Collator` for locale-sensitive string comparison.
+    		     * @return Integer the levenshtein distance (0 and above).
+    		     */
+    		    get: function(str1, str2, options) {
+    		      var useCollator = (options && collator && options.useCollator);
+    		      
+    		      if (useCollator) {
+    		        var str1Len = str1.length,
+    		          str2Len = str2.length;
+    		        
+    		        // base cases
+    		        if (str1Len === 0) return str2Len;
+    		        if (str2Len === 0) return str1Len;
+
+    		        // two rows
+    		        var curCol, nextCol, i, j, tmp;
+
+    		        // initialise previous row
+    		        for (i=0; i<str2Len; ++i) {
+    		          prevRow[i] = i;
+    		          str2Char[i] = str2.charCodeAt(i);
+    		        }
+    		        prevRow[str2Len] = str2Len;
+
+    		        var strCmp;
+    		        // calculate current row distance from previous row using collator
+    		        for (i = 0; i < str1Len; ++i) {
+    		          nextCol = i + 1;
+
+    		          for (j = 0; j < str2Len; ++j) {
+    		            curCol = nextCol;
+
+    		            // substution
+    		            strCmp = 0 === collator.compare(str1.charAt(i), String.fromCharCode(str2Char[j]));
+
+    		            nextCol = prevRow[j] + (strCmp ? 0 : 1);
+
+    		            // insertion
+    		            tmp = curCol + 1;
+    		            if (nextCol > tmp) {
+    		              nextCol = tmp;
+    		            }
+    		            // deletion
+    		            tmp = prevRow[j + 1] + 1;
+    		            if (nextCol > tmp) {
+    		              nextCol = tmp;
+    		            }
+
+    		            // copy current col value into previous (in preparation for next iteration)
+    		            prevRow[j] = curCol;
+    		          }
+
+    		          // copy last col value into previous (in preparation for next iteration)
+    		          prevRow[j] = nextCol;
+    		        }
+    		        return nextCol;
+    		      }
+    		      return levenshtein.distance(str1, str2);
+    		    }
+
+    		  };
+
+    		  // amd
+    		  if (module !== null && 'object' !== "undefined" && module.exports === exports) {
+    		    module.exports = Levenshtein;
+    		  }
+    		  // web worker
+    		  else if (typeof self !== "undefined" && typeof self.postMessage === 'function' && typeof self.importScripts === 'function') {
+    		    self.Levenshtein = Levenshtein;
+    		  }
+    		  // browser main thread
+    		  else if (typeof window !== "undefined" && window !== null) {
+    		    window.Levenshtein = Levenshtein;
+    		  }
+    		}()); 
+    	} (levenshtein$1, levenshtein$1.exports));
+    	return levenshtein$1.exports;
+    }
+
+    var levenshteinExports = requireLevenshtein();
+    var levenshtein = /*@__PURE__*/getDefaultExportFromCjs(levenshteinExports);
+
+    // const levenshtein = require('fast-levenshtein');
+    const RedefineableTokenSentinel = new Token(TokenType.AT, "", 0, 0, 0);
+    class Environment {
+        constructor(source, enclosing, names) {
+            this.source = source;
+            this.enclosing = enclosing;
+            this.names = names;
+            this.functions = new Set();
+            this.moduleBindings = new Set();
+        }
+        /*
+        * Does a full lookup up the environment chain for a name.
+        * Returns the distance of the name from the current environment.
+        * If name isn't found, return -1.
+        * */
+        lookupName(identifier) {
+            const name = identifier.lexeme;
+            let distance = 0;
+            let curr = this;
+            while (curr !== null) {
+                if (curr.names.has(name)) {
+                    break;
+                }
+                distance += 1;
+                curr = curr.enclosing;
+            }
+            return (curr === null) ? -1 : distance;
+        }
+        /* Looks up the name but only for the current environment. */
+        lookupNameCurrentEnv(identifier) {
+            return this.names.get(identifier.lexeme);
+        }
+        lookupNameCurrentEnvWithError(identifier) {
+            if (this.lookupName(identifier) < 0) {
+                throw new exports.ResolverErrors.NameNotFoundError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, this.suggestName(identifier));
+            }
+        }
+        lookupNameParentEnvWithError(identifier) {
+            const name = identifier.lexeme;
+            let parent = this.enclosing;
+            if (parent === null || !parent.names.has(name)) {
+                throw new exports.ResolverErrors.NameNotFoundError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + name.length, this.suggestName(identifier));
+            }
+        }
+        declareName(identifier) {
+            const lookup = this.lookupNameCurrentEnv(identifier);
+            if (lookup !== undefined && lookup !== RedefineableTokenSentinel) {
+                throw new exports.ResolverErrors.NameReassignmentError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, lookup);
+            }
+            this.names.set(identifier.lexeme, identifier);
+        }
+        // Same as declareName but allowed to re-declare later.
+        declarePlaceholderName(identifier) {
+            const lookup = this.lookupNameCurrentEnv(identifier);
+            if (lookup !== undefined) {
+                throw new exports.ResolverErrors.NameReassignmentError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, lookup);
+            }
+            this.names.set(identifier.lexeme, RedefineableTokenSentinel);
+        }
+        suggestNameCurrentEnv(identifier) {
+            const name = identifier.lexeme;
+            let minDistance = Infinity;
+            let minName = null;
+            for (const declName of this.names.keys()) {
+                const dist = levenshtein.get(name, declName);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    minName = declName;
+                }
+            }
+            return minName;
+        }
+        /*
+        * Finds name closest to name in all environments up to builtin environment.
+        * Calculated using min levenshtein distance.
+        * */
+        suggestName(identifier) {
+            const name = identifier.lexeme;
+            let minDistance = Infinity;
+            let minName = null;
+            let curr = this;
+            while (curr !== null) {
+                for (const declName of curr.names.keys()) {
+                    const dist = levenshtein.get(name, declName);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        minName = declName;
+                    }
+                }
+                curr = curr.enclosing;
+            }
+            if (minDistance >= 4) {
+                // This is pretty far, so just return null
+                return null;
+            }
+            return minName;
+        }
+    }
+    class Resolver {
+        constructor(source, ast) {
+            this.source = source;
+            this.ast = ast;
+            // The global environment
+            this.environment = new Environment(source, null, new Map([
+                // misc library
+                ["_int", new Token(TokenType.NAME, "_int", 0, 0, 0)],
+                ["_int_from_string", new Token(TokenType.NAME, "_int_from_string", 0, 0, 0)],
+                ["abs", new Token(TokenType.NAME, "abs", 0, 0, 0)],
+                ["char_at", new Token(TokenType.NAME, "char_at", 0, 0, 0)],
+                ["error", new Token(TokenType.NAME, "error", 0, 0, 0)],
+                ["input", new Token(TokenType.NAME, "input", 0, 0, 0)],
+                ["isinstance", new Token(TokenType.NAME, "isinstance", 0, 0, 0)],
+                ["max", new Token(TokenType.NAME, "max", 0, 0, 0)],
+                ["min", new Token(TokenType.NAME, "min", 0, 0, 0)],
+                ["print", new Token(TokenType.NAME, "print", 0, 0, 0)],
+                ["random_random", new Token(TokenType.NAME, "random_random", 0, 0, 0)],
+                ["round", new Token(TokenType.NAME, "round", 0, 0, 0)],
+                ["str", new Token(TokenType.NAME, "str", 0, 0, 0)],
+                ["time_time", new Token(TokenType.NAME, "time_time", 0, 0, 0)],
+                // math constants
+                ["math_pi", new Token(TokenType.NAME, "math_pi", 0, 0, 0)],
+                ["math_e", new Token(TokenType.NAME, "math_e", 0, 0, 0)],
+                ["math_inf", new Token(TokenType.NAME, "math_inf", 0, 0, 0)],
+                ["math_nan", new Token(TokenType.NAME, "math_nan", 0, 0, 0)],
+                ["math_tau", new Token(TokenType.NAME, "math_tau", 0, 0, 0)],
+                // math library
+                ["math_acos", new Token(TokenType.NAME, "math_acos", 0, 0, 0)],
+                ["math_acosh", new Token(TokenType.NAME, "math_acosh", 0, 0, 0)],
+                ["math_asin", new Token(TokenType.NAME, "math_asin", 0, 0, 0)],
+                ["math_asinh", new Token(TokenType.NAME, "math_asinh", 0, 0, 0)],
+                ["math_atan", new Token(TokenType.NAME, "math_atan", 0, 0, 0)],
+                ["math_atan2", new Token(TokenType.NAME, "math_atan2", 0, 0, 0)],
+                ["math_atanh", new Token(TokenType.NAME, "math_atanh", 0, 0, 0)],
+                ["math_cbrt", new Token(TokenType.NAME, "math_cbrt", 0, 0, 0)],
+                ["math_ceil", new Token(TokenType.NAME, "math_ceil", 0, 0, 0)],
+                ["math_comb", new Token(TokenType.NAME, "math_comb", 0, 0, 0)],
+                ["math_copysign", new Token(TokenType.NAME, "math_copysign", 0, 0, 0)],
+                ["math_cos", new Token(TokenType.NAME, "math_cos", 0, 0, 0)],
+                ["math_cosh", new Token(TokenType.NAME, "math_cosh", 0, 0, 0)],
+                ["math_degrees", new Token(TokenType.NAME, "math_degrees", 0, 0, 0)],
+                ["math_erf", new Token(TokenType.NAME, "math_erf", 0, 0, 0)],
+                ["math_erfc", new Token(TokenType.NAME, "math_erfc", 0, 0, 0)],
+                ["math_exp", new Token(TokenType.NAME, "math_exp", 0, 0, 0)],
+                ["math_exp2", new Token(TokenType.NAME, "math_exp2", 0, 0, 0)],
+                ["math_expm1", new Token(TokenType.NAME, "math_expm1", 0, 0, 0)],
+                ["math_fabs", new Token(TokenType.NAME, "math_fabs", 0, 0, 0)],
+                ["math_factorial", new Token(TokenType.NAME, "math_factorial", 0, 0, 0)],
+                ["math_floor", new Token(TokenType.NAME, "math_floor", 0, 0, 0)],
+                ["math_fma", new Token(TokenType.NAME, "math_fma", 0, 0, 0)],
+                ["math_fmod", new Token(TokenType.NAME, "math_fmod", 0, 0, 0)],
+                ["math_gamma", new Token(TokenType.NAME, "math_gamma", 0, 0, 0)],
+                ["math_gcd", new Token(TokenType.NAME, "math_gcd", 0, 0, 0)],
+                ["math_isfinite", new Token(TokenType.NAME, "math_isfinite", 0, 0, 0)],
+                ["math_isinf", new Token(TokenType.NAME, "math_isinf", 0, 0, 0)],
+                ["math_isnan", new Token(TokenType.NAME, "math_isnan", 0, 0, 0)],
+                ["math_isqrt", new Token(TokenType.NAME, "math_isqrt", 0, 0, 0)],
+                ["math_lcm", new Token(TokenType.NAME, "math_lcm", 0, 0, 0)],
+                ["math_ldexp", new Token(TokenType.NAME, "math_ldexp", 0, 0, 0)],
+                ["math_lgamma", new Token(TokenType.NAME, "math_lgamma", 0, 0, 0)],
+                ["math_log", new Token(TokenType.NAME, "math_log", 0, 0, 0)],
+                ["math_log10", new Token(TokenType.NAME, "math_log10", 0, 0, 0)],
+                ["math_log1p", new Token(TokenType.NAME, "math_log1p", 0, 0, 0)],
+                ["math_log2", new Token(TokenType.NAME, "math_log2", 0, 0, 0)],
+                ["math_nextafter", new Token(TokenType.NAME, "math_nextafter", 0, 0, 0)],
+                ["math_perm", new Token(TokenType.NAME, "math_perm", 0, 0, 0)],
+                ["math_pow", new Token(TokenType.NAME, "math_pow", 0, 0, 0)],
+                ["math_radians", new Token(TokenType.NAME, "math_radians", 0, 0, 0)],
+                ["math_remainder", new Token(TokenType.NAME, "math_remainder", 0, 0, 0)],
+                ["math_sin", new Token(TokenType.NAME, "math_sin", 0, 0, 0)],
+                ["math_sinh", new Token(TokenType.NAME, "math_sinh", 0, 0, 0)],
+                ["math_sqrt", new Token(TokenType.NAME, "math_sqrt", 0, 0, 0)],
+                ["math_tan", new Token(TokenType.NAME, "math_tan", 0, 0, 0)],
+                ["math_tanh", new Token(TokenType.NAME, "math_tanh", 0, 0, 0)],
+                ["math_trunc", new Token(TokenType.NAME, "math_trunc", 0, 0, 0)],
+                ["math_ulp", new Token(TokenType.NAME, "math_ulp", 0, 0, 0)]
+            ]));
+            this.functionScope = null;
+        }
+        resolve(stmt) {
+            var _a;
+            if (stmt === null) {
+                return;
+            }
+            if (stmt instanceof Array) {
+                // Resolve all top-level functions first. Python allows functions declared after
+                // another function to be used in that function.
+                for (const st of stmt) {
+                    if (st instanceof StmtNS.FunctionDef) {
+                        (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declarePlaceholderName(st.name);
+                    }
+                }
+                for (const st of stmt) {
+                    st.accept(this);
+                }
+            }
+            else {
+                stmt.accept(this);
+            }
+        }
+        varDeclNames(names) {
+            const res = Array.from(names.values())
+                .filter(name => {
+                var _a, _b;
+                return (
+                // Filter out functions and module bindings.
+                // Those will be handled separately, so they don't
+                // need to be hoisted.
+                !((_a = this.environment) === null || _a === void 0 ? void 0 : _a.functions.has(name.lexeme))
+                    && !((_b = this.environment) === null || _b === void 0 ? void 0 : _b.moduleBindings.has(name.lexeme)));
+            });
+            return res.length === 0 ? null : res;
+        }
+        functionVarConstraint(identifier) {
+            var _a;
+            if (this.functionScope == null) {
+                return;
+            }
+            let curr = this.environment;
+            while (curr !== this.functionScope) {
+                if (curr !== null && curr.names.has(identifier.lexeme)) {
+                    const token = curr.names.get(identifier.lexeme);
+                    if (token === undefined) {
+                        throw new Error("placeholder error");
+                    }
+                    throw new exports.ResolverErrors.NameReassignmentError(identifier.line, identifier.col, this.source, identifier.indexInSource, identifier.indexInSource + identifier.lexeme.length, token);
+                }
+                curr = (_a = curr === null || curr === void 0 ? void 0 : curr.enclosing) !== null && _a !== void 0 ? _a : null;
+            }
+        }
+        //// STATEMENTS
+        visitFileInputStmt(stmt) {
+            // Create a new environment.
+            const oldEnv = this.environment;
+            this.environment = new Environment(this.source, this.environment, new Map());
+            this.resolve(stmt.statements);
+            // Grab identifiers from that new environment. That are NOT functions.
+            // stmt.varDecls = this.varDeclNames(this.environment.names)
+            this.environment = oldEnv;
+        }
+        visitIndentCreation(stmt) {
+            // Create a new environment
+            this.environment = new Environment(this.source, this.environment, new Map());
+        }
+        visitDedentCreation(stmt) {
+            var _a;
+            // Switch to the previous environment.
+            if (((_a = this.environment) === null || _a === void 0 ? void 0 : _a.enclosing) !== undefined) {
+                this.environment = this.environment.enclosing;
+            }
+        }
+        visitFunctionDefStmt(stmt) {
+            var _a, _b;
+            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.name);
+            (_b = this.environment) === null || _b === void 0 ? void 0 : _b.functions.add(stmt.name.lexeme);
+            // Create a new environment.
+            // const oldEnv = this.environment;
+            // Assign the parameters to the new environment.
+            const newEnv = new Map(stmt.parameters.map(param => [param.lexeme, param]));
+            this.environment = new Environment(this.source, this.environment, newEnv);
+            // const params = new Map(
+            //     stmt.parameters.map(param => [param.lexeme, param])
+            // );
+            // if (this.environment !== null) {
+            //     this.environment.names = params;
+            // }
+            this.functionScope = this.environment;
+            this.resolve(stmt.body);
+            // Grab identifiers from that new environment. That are NOT functions.
+            // stmt.varDecls = this.varDeclNames(this.environment.names)
+            // Restore old environment
+            // this.environment = oldEnv;
+        }
+        visitAnnAssignStmt(stmt) {
+            var _a;
+            this.resolve(stmt.ann);
+            this.resolve(stmt.value);
+            this.functionVarConstraint(stmt.name);
+            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.name);
+        }
+        visitAssignStmt(stmt) {
+            var _a;
+            this.resolve(stmt.value);
+            this.functionVarConstraint(stmt.name);
+            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.name);
+        }
+        visitAssertStmt(stmt) {
+            this.resolve(stmt.value);
+        }
+        visitForStmt(stmt) {
+            var _a;
+            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(stmt.target);
+            this.resolve(stmt.iter);
+            this.resolve(stmt.body);
+        }
+        visitIfStmt(stmt) {
+            this.resolve(stmt.condition);
+            this.resolve(stmt.body);
+            this.resolve(stmt.elseBlock);
+        }
+        // @TODO we need to treat all global statements as variable declarations in the global
+        // scope.
+        visitGlobalStmt(stmt) {
+            // Do nothing because global can also be declared in our
+            // own scope.
+        }
+        // @TODO nonlocals mean that any variable following that name in the current env
+        // should not create a variable declaration, but instead point to an outer variable.
+        visitNonLocalStmt(stmt) {
+            var _a;
+            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.lookupNameParentEnvWithError(stmt.name);
+        }
+        visitReturnStmt(stmt) {
+            if (stmt.value !== null) {
+                this.resolve(stmt.value);
+            }
+        }
+        visitWhileStmt(stmt) {
+            this.resolve(stmt.condition);
+            this.resolve(stmt.body);
+        }
+        visitSimpleExprStmt(stmt) {
+            this.resolve(stmt.expression);
+        }
+        visitFromImportStmt(stmt) {
+            var _a, _b;
+            for (const name of stmt.names) {
+                (_a = this.environment) === null || _a === void 0 ? void 0 : _a.declareName(name);
+                (_b = this.environment) === null || _b === void 0 ? void 0 : _b.moduleBindings.add(name.lexeme);
+            }
+        }
+        visitContinueStmt(stmt) {
+        }
+        visitBreakStmt(stmt) {
+        }
+        visitPassStmt(stmt) {
+        }
+        //// EXPRESSIONS
+        visitVariableExpr(expr) {
+            var _a;
+            (_a = this.environment) === null || _a === void 0 ? void 0 : _a.lookupNameCurrentEnvWithError(expr.name);
+        }
+        visitLambdaExpr(expr) {
+            // Create a new environment.
+            const oldEnv = this.environment;
+            // Assign the parameters to the new environment.
+            const newEnv = new Map(expr.parameters.map(param => [param.lexeme, param]));
+            this.environment = new Environment(this.source, this.environment, newEnv);
+            this.resolve(expr.body);
+            // Restore old environment
+            this.environment = oldEnv;
+        }
+        visitMultiLambdaExpr(expr) {
+            // Create a new environment.
+            const oldEnv = this.environment;
+            // Assign the parameters to the new environment.
+            const newEnv = new Map(expr.parameters.map(param => [param.lexeme, param]));
+            this.environment = new Environment(this.source, this.environment, newEnv);
+            this.resolve(expr.body);
+            // Grab identifiers from that new environment.
+            expr.varDecls = Array.from(this.environment.names.values());
+            // Restore old environment
+            this.environment = oldEnv;
+        }
+        visitUnaryExpr(expr) {
+            this.resolve(expr.right);
+        }
+        visitGroupingExpr(expr) {
+            this.resolve(expr.expression);
+        }
+        visitBinaryExpr(expr) {
+            this.resolve(expr.left);
+            this.resolve(expr.right);
+        }
+        visitBoolOpExpr(expr) {
+            this.resolve(expr.left);
+            this.resolve(expr.right);
+        }
+        visitCompareExpr(expr) {
+            this.resolve(expr.left);
+            this.resolve(expr.right);
+        }
+        visitCallExpr(expr) {
+            this.resolve(expr.callee);
+            this.resolve(expr.args);
+        }
+        visitTernaryExpr(expr) {
+            this.resolve(expr.predicate);
+            this.resolve(expr.consequent);
+            this.resolve(expr.alternative);
+        }
+        visitNoneExpr(expr) {
+        }
+        visitLiteralExpr(expr) {
+        }
+        visitBigIntLiteralExpr(expr) {
+        }
+        visitComplexExpr(expr) {
+        }
+    }
+
     function runCSEMachine(program, context, options = {}) {
-        const value = evaluate(program, context, options);
-        return CSEResultPromise(context, value);
+        const result = evaluate(program, context, options);
+        return CSEResultPromise(context, result);
     }
 
     /**
@@ -26776,7 +26778,7 @@
                 try {
                     const result = yield runInContext(chunk, // Code
                     this.context, this.options);
-                    this.conductor.sendOutput(`${result.representation.toString()}`);
+                    this.conductor.sendOutput(`${result.representation.toString(result.value)}`);
                 }
                 catch (error) {
                     this.conductor.sendOutput(`Error: ${error instanceof Error ? error.message : error}`);
