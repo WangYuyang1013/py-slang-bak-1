@@ -55,8 +55,8 @@ export function CSEResultPromise(context: Context, value: Value): Promise<Result
     } else if (value instanceof CseError) {
       resolve({ status: 'error' } as unknown as Result );
     } else {
-      const rep = { type: "string", value: cseFinalPrint };
-      const representation = new Representation(value);
+      // const rep = { type: "string", value: cseFinalPrint };
+      const representation = new Representation(cseFinalPrint);
       resolve({ status: 'finished', context, value, representation })
     }
   })

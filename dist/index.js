@@ -25087,7 +25087,10 @@
         // Convert each argument using toPythonString (an assumed helper function).
         const pieces = args.map(arg => toPythonString(arg));
         // Join them with spaces.
-        pieces.join(' ');
+        const output = pieces.join(' ');
+        // Actually print to console (you can replace this with any desired output).
+        // console.info(output);
+        addPrint(output);
         //return { type: 'string', value: output };
     }
 
@@ -25189,6 +25192,10 @@
      *
      * Heavily adapted from https://github.com/source-academy/JSpike/
      */
+    let cseFinalPrint = "";
+    function addPrint(str) {
+        cseFinalPrint = cseFinalPrint + str + "\n";
+    }
     /**
      * Function that returns the appropriate Promise<Result> given the output of CSE machine evaluating, depending
      * on whether the program is finished evaluating, ran into a breakpoint or ran into an error.
@@ -25205,7 +25212,8 @@
                 resolve({ status: 'error' });
             }
             else {
-                const representation = new Representation(value);
+                // const rep = { type: "string", value: cseFinalPrint };
+                const representation = new Representation(cseFinalPrint);
                 resolve({ status: 'finished', context, value, representation });
             }
         });
