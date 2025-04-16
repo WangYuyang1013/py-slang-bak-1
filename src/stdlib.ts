@@ -1270,7 +1270,6 @@ export function math_log10(args: Value[]): Value {
     if (args.length !== 1) {
         throw new Error(`math_log10 expects exactly 1 argument, but got ${args.length}`);
     }
-    
   
     const x = args[0];
     if (x.type !== 'number' && x.type !== 'bigint') {
